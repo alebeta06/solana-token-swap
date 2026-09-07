@@ -505,3 +505,19 @@ Este proyecto te introduce a:
 
 ¡Buena suerte con tu proyecto! 🚀
 
+
+<!-- BEGIN cc:que-se-valora -->
+¡Hola! ¡Qué bien que estés trabajando en tu proyecto "Rust Swap"! Para que tengas una idea clara de qué es lo que miraremos con lupa cuando lo corrijamos, te he preparado esta sección. Así sabrás dónde poner el foco.
+
+## 📋 Qué se valora
+
+Aquí te cuento en qué nos fijaremos al revisar tu proyecto:
+
+**Funcionalidad y cumplimiento del enunciado** es, sin duda, lo que más pesa, y aquí veremos si tu programa hace exactamente lo que se pide en el enunciado y si funciona correctamente en todos los escenarios.
+
+Luego, el **Rust idiomático y la calidad del código** tienen un peso importante, y en este punto nos fijaremos en que tu código esté escrito de una forma que sea natural y eficiente en Rust, siguiendo las buenas prácticas del lenguaje.
+
+Finalmente, los **tests y la documentación** también tienen un peso importante, y aquí evaluaremos si has escrito pruebas que cubran bien tu código y si has documentado lo necesario para que cualquiera pueda entenderlo.
+
+Recuerda que el detalle del enunciado es la guía principal para todo, y la evaluación no penalizará por cosas que no se pidan explícitamente en él.
+<!-- END cc:que-se-valora -->
