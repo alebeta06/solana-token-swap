@@ -1,5 +1,5 @@
 [toolchain]
-solana_version = "3.1.14"
+solana_version = "4.2.2"
 package_manager = "yarn"
 
 [features]
@@ -7,10 +7,7 @@ resolution = true
 skip-lint = false
 
 [programs.localnet]
-solana_token_swap = "9LEv8jBxh7mLKJ5V95DpgHsCzF2S6zJEqq8kUMSopJFL"
-
-[registry]
-url = "https://api.apr.dev"
+solana_token_swap = "BJ7GHy1zRe1VKuKUZU2ac2q1VQmtukmHzCpbo98m21qp"
 
 [provider]
 cluster = "localnet"
@@ -18,3 +15,5 @@ wallet = "~/.config/solana/id.json"
 
 [scripts]
 test = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 tests/**/*.ts"
+
+[hooks]

@@ -1,7 +1,7 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token::{Mint, Token, TokenAccount};
 
-declare_id!("9LEv8jBxh7mLKJ5V95DpgHsCzF2S6zJEqq8kUMSopJFL");
+declare_id!("BJ7GHy1zRe1VKuKUZU2ac2q1VQmtukmHzCpbo98m21qp");
 
 /// Price is stored as an integer scaled by 10^PRICE_DECIMALS.
 /// 🇪🇸 NOTA: price = cuánto B por cada A. price = 2_000_000 → 1 A vale 2 B.
