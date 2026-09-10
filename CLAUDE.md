@@ -10,10 +10,11 @@ Solana y Rust** — explicar antes de implementar, comparando siempre con Solidi
 
 - **NUNCA hacer push.** Alejandro empuja manualmente desde su terminal.
 - **NUNCA añadir `Co-Authored-By`** en los commits.
-- **NUNCA quitar `solana_version` de `Anchor.toml`.** Ver "Entorno" — es la línea que
-  hace que el proyecto compile.
+- **NUNCA quitar `solana_version` de `Anchor.toml`.** Ver "Entorno".
 - **NUNCA gestionar la versión de Solana desde fuera** (`agave-install`, `rustup`,
   symlinks). Anchor la sobreescribe en cada build.
+- **NUNCA borrar `target/deploy/` entero.** Contiene la keypair del programa; borrarla
+  genera un program ID nuevo y hay que resincronizar.
 
 ---
 
@@ -23,75 +24,82 @@ Solana y Rust** — explicar antes de implementar, comparando siempre con Solidi
 | ----------------------------------- | ------------------ |
 | anchor-cli                          | **1.2.0**          |
 | anchor-lang / anchor-spl            | **1.2.0**          |
-| Solana (declarada en `Anchor.toml`) | **3.1.14**         |
-| platform-tools                      | v1.52 (rustc 1.89) |
+| `@anchor-lang/core` (TS)            | **1.2.0**          |
+| Solana (declarada en `Anchor.toml`) | **4.2.2**          |
+| platform-tools                      | v1.57 (rustc 1.95) |
+| SBPF del binario                    | **v3**             |
 | rustc (sistema)                     | 1.98.0             |
-| node                                | v24.15.0           |
+| node / yarn                         | v24.15.0 / 1.22.22 |
 
-### ⚠️ La línea crítica
+### ⚠️ Las dos líneas críticas
 
 ```toml
 [toolchain]
-solana_version = "3.1.14"
+solana_version = "4.2.2"
 ```
 
 **`anchor build` desinstala y re-enlaza el toolchain de Rust en cada ejecución**, según
 la versión de Solana que él decide. Sin `solana_version` explícito usa un default
-(2.1.0), que trae platform-tools v1.43 con **rustc 1.79** — anterior a la
-estabilización de edition2024 (rustc 1.85). Resultado: media docena de dependencias
-modernas fallan al parsear su manifiesto.
+(2.1.0), cuyo rustc 1.79 es anterior a edition2024 y no compila las dependencias
+actuales.
 
-Se intentó fijar dependencias una por una (`blake3`, `digest`, `proc-macro-crate`,
-`zeroize`, `indexmap`, `unicode-segmentation`, `solana-program`) y **no converge**:
-cada crate nuevo reintroduce el problema, y añadir `anchor-spl` invalidó todos los pins
-de golpe. También se intentó corregir el symlink de `active_release` a mano y con
-`agave-install init stable`: **Anchor lo revierte en el siguiente build**.
+**Por qué 4.2.2 y no 3.1.14** (que es lo que recomienda la doc de Anchor): las
+platform-tools que trae Anchor 1.2.0 compilan a **SBPFv3**, y el validador de la 3.1.14
+no lo carga — falla con `Failed to parse ELF file: invalid file header`. El binario y el
+validador tienen que salir de la misma versión de Solana, y `solana_version` controla
+las dos a la vez.
 
-La solución es declarar la versión en `Anchor.toml`. **El `Cargo.lock` no tiene ningún
-pin y no debe tenerlos.**
+**El `Cargo.lock` no tiene pins y no debe tenerlos.**
+
+### ⚠️ Cómo se corren los tests
+
+`anchor test` **no funciona solo**: el runner por defecto de Anchor 1.x es **Surfpool**,
+que no está instalado (`Failed to spawn surfpool`).
+
+```bash
+# terminal 1 — estado limpio en cada sesión
+rm -rf test-ledger && solana-test-validator
+
+# terminal 2
+anchor test --skip-local-validator
+```
+
+Sin `rm -rf test-ledger`, el ledger conserva los mercados de la corrida anterior y los
+tests fallan con "account already in use".
 
 ### Verificación del entorno
 
 ```bash
-avm list            # ← usar esto, NO `anchor --version`
+avm list                    # ← usar esto, NO `anchor --version`
 cargo-build-sbf --version
+solana-test-validator --version
 ```
 
-⚠️ **`anchor --version` miente.** Es un bug conocido de avm: no se actualiza tras
-`avm use`. Reporta 0.31.1 aunque estés en 1.2.0. La fuente de verdad es `avm list`.
+⚠️ **`anchor --version` miente.** Bug conocido de avm: no se actualiza tras `avm use`.
+Reporta 0.31.1 aunque estés en 1.2.0. La fuente de verdad es `avm list`.
 
-ℹ️ AVM y Anchor los mantiene ahora **otter-sec** (repositorio oficial actual). Un
-`avm self-update` que cambia el origen de `solana-foundation` a `otter-sec` es
-esperado, no un compromiso de la cadena de suministro.
+ℹ️ AVM y Anchor los mantiene ahora **otter-sec** (repositorio oficial actual).
 
 ---
 
 ## Deriva de versión — regla operativa
 
 El material del curso (videos) es **anterior a Anchor 0.31**; el proyecto va en
-**1.2.0**. Habrá diferencias de sintaxis significativas.
+**1.2.0**.
 
 > **Las lecciones son la autoridad sobre el DISEÑO. El compilador y la documentación
 > son la autoridad sobre la SINTAXIS.**
 
-| Tomar de las lecciones             | Ignorar de las lecciones      |
-| ---------------------------------- | ----------------------------- |
-| Qué cuentas lleva cada instrucción | Firmas exactas de las macros  |
-| Cómo se estructuran las seeds      | Nombres de imports            |
-| La lógica de negocio y la fórmula  | Versiones de dependencias     |
-| Qué validaciones ponen y cuáles no | Cómo se declara el program ID |
+**Verificado en Fase 1 — lo que SÍ funciona en 1.2.0:**
 
-**Verificar siempre la API contra la documentación de Anchor 1.x antes de escribir.**
-No asumir que un patrón visto en un tutorial compila.
+- `use anchor_spl::token::{Mint, Token, TokenAccount};` sigue siendo válido
+- `Sysvar<'info, Rent>` **ya no hace falta** en `init` (la referencia lo incluía)
+- `ctx.bumps.<cuenta>` en vez de recibir bumps como parámetros de instrucción
+- `#[derive(InitSpace)]` + `MarketAccount::INIT_SPACE` en vez de constantes manuales
 
-Cambios conocidos de 1.0+ a tener presentes:
+**Cambios de 1.0+ ya aplicados:**
 
-- Paquete TypeScript renombrado: `@coral-xyz/anchor` → **`@anchor-lang/core`**
-- `anchor init` genera plantilla de tests **LiteSVM** por defecto. El enunciado pide
-  **Mocha/Chai** → usar `--test-template mocha` o adaptar el `tests/` existente
-- ⚠️ **Verificar** los nombres del módulo de tokens en `anchor-spl` 1.2.0: el árbol
-  ahora resuelve `spl-token-interface`, no `spl-token`. Los imports pueden haber
-  cambiado respecto a `anchor_spl::token`
+- Paquete TypeScript: `@coral-xyz/anchor` → **`@anchor-lang/core`**
 
 ---
 
@@ -104,6 +112,7 @@ Cambios conocidos de 1.0+ a tener presentes:
 - **Orden canónico obligatorio:** `mint_a.key() < mint_b.key()`
 - **Los decimales se leen del `Mint`**, nunca se aceptan como parámetro del caller
 - `price` con 6 decimales fijos (`PRICE_DECIMALS`). Significa: **cuánto B por cada A**
+- `initialize_market` deja `price = 0`; el mercado no opera hasta `set_price`
 - `min_amount_out` en ambos swaps
 - Eventos (`emit!`) desde el principio, pero **el frontend NO los usa como fuente de
   estado** — no existe `eth_getLogs` en Solana. El estado se lee con `getAccountInfo`
@@ -115,15 +124,28 @@ Cambios conocidos de 1.0+ a tener presentes:
 ## Riesgos técnicos — verificar en cada cambio
 
 1. **Aritmética en `u128`**, vuelta a `u64` con `try_into()`. `u64` desborda con
-   9 decimales y precio de 6 (`amount × price × 10^9` ≈ 10²⁷ frente a `u64::MAX` ≈ 1,8×10¹⁹).
+   9 decimales y precio de 6 (`amount × price × 10^9` ≈ 10²⁷ vs `u64::MAX` ≈ 1,8×10¹⁹).
 2. **Todas las multiplicaciones antes de todas las divisiones.** Ninguna división
    anidada: trunca y el denominador puede colapsar a cero.
 3. **El truncamiento debe favorecer al pool en ambas direcciones.**
    Invariante: A→B→A nunca devuelve más de lo que entró.
 4. **`set_price` requiere `has_one = authority` Y `Signer`.** Por separado no valen nada.
 5. **Output cero tras truncar** debe dar error explícito, no quedarse los tokens.
-6. **Liquidez insuficiente** con error tipado antes del CPI, no dejar que falle el
-   SPL Token con un error opaco.
+6. **Liquidez insuficiente** con error tipado antes del CPI.
+7. **`add_liquidity` con ambos importes a cero** debe fallar, no devolver `Ok`.
+
+---
+
+## Estado del programa
+
+**Fase 1 completada** ✅ — `MarketAccount` + `initialize_market` + 5 tests en verde.
+
+Definidos pero aún sin usar: `PriceNotSet`, `InsufficientLiquidity`, `MathOverflow`,
+`ZeroOutput`, `SlippageExceeded`, `ZeroAmount`.
+
+**Siguiente:** Fase 2 — `set_price` + `add_liquidity`.
+⚠️ Verificar si `token::transfer` está deprecado en `anchor-spl` 1.2.0 a favor de
+`transfer_checked`, que además valida mint y decimales en el propio CPI.
 
 ---
 
@@ -131,8 +153,9 @@ Cambios conocidos de 1.0+ a tener presentes:
 
 - Conventional Commits en inglés, atómicos por unidad lógica
 - Código y doc-comments en inglés; notas pedagógicas con prefijo `🇪🇸 NOTA:` en español
-- Tests: nombres como aserción, no como descripción
-- Custom errors con argumentos solo cuando aportan valor de depuración
+- **Tests: nombres como aserción de lo que garantiza el programa**, no descripción del
+  test. Ej: `"reads decimals from the mints instead of trusting the caller"`
+- Rama única `main`
 
 ---
 
@@ -140,11 +163,12 @@ Cambios conocidos de 1.0+ a tener presentes:
 
 - Next.js 15 App Router, TypeScript strict, Tailwind
 - `@solana/wallet-adapter-react` (genérico, no el adapter específico de Solflare)
-- Cliente Anchor: **`@anchor-lang/core`** (no `@coral-xyz/anchor`)
+- Cliente Anchor: **`@anchor-lang/core`**
 - Paleta Solana: morado `#9945FF`, verde `#14F195`, fondo oscuro
 - Footer con enlaces: GitHub https://github.com/alebeta06 ·
   X https://x.com/Ale_Beta · LinkedIn https://www.linkedin.com/in/alebeta/
 - `data-testid` en todo elemento interactivo desde el inicio
 - Conversión unidades base ↔ display centralizada en un único módulo, con tests
 - ⚠️ El mapeo "token que el usuario ve" ↔ A/B necesita test propio: con orden canónico,
-  "vender USDC" puede ser `swap_a_to_b` o `swap_b_to_a` según el orden de las pubkeys
+  "vender USDC" puede ser `swap_a_to_b` o `swap_b_to_a` según el orden de las pubkeys.
+  El patrón de ordenación está en el `before()` del test de Fase 1
