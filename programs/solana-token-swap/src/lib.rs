@@ -1,5 +1,5 @@
 use anchor_lang::prelude::*;
-use anchor_spl::token::{Mint, Token, TokenAccount};
+use anchor_spl::token::{self, Mint, Token, TokenAccount, Transfer};
 
 declare_id!("BJ7GHy1zRe1VKuKUZU2ac2q1VQmtukmHzCpbo98m21qp");
 
@@ -38,6 +38,60 @@ pub mod solana_token_swap {
             token_mint_b: market.token_mint_b,
             decimals_a: market.decimals_a,
             decimals_b: market.decimals_b,
+        });
+
+        Ok(())
+    }
+
+    /// Updates the exchange price. Only the market authority may call this.
+    pub fn set_price(ctx: Context<SetPrice>, price: u64) -> Result<()> {
+        require!(price > 0, SwapError::ZeroAmount);
+
+        let market = &mut ctx.accounts.market;
+        market.price = price;
+
+        emit!(PriceSet {
+            market: market.key(),
+            authority: market.authority,
+            price,
+        });
+
+        Ok(())
+    }
+
+    /// Deposits tokens into the market vaults. Open to any depositor.
+    /// 🇪🇸 NOTA: no lleva `has_one = authority` — cualquiera puede aportar liquidez.
+    /// Regalar tokens a una bóveda no hace daño: nadie puede sacarlos salvo por swap.
+    pub fn add_liquidity(ctx: Context<AddLiquidity>, amount_a: u64, amount_b: u64) -> Result<()> {
+        // 🇪🇸 NOTA: la referencia solo hace `if amount > 0`, así que con ambos a cero
+        // devuelve Ok sin hacer nada. Un no-op silencioso es peor que un error.
+        require!(amount_a > 0 || amount_b > 0, SwapError::ZeroAmount);
+
+        if amount_a > 0 {
+            let cpi_accounts = Transfer {
+                from: ctx.accounts.depositor_token_a.to_account_info(),
+                to: ctx.accounts.vault_a.to_account_info(),
+                authority: ctx.accounts.depositor.to_account_info(),
+            };
+            let cpi_ctx = CpiContext::new(ctx.accounts.token_program.key(), cpi_accounts);
+            token::transfer(cpi_ctx, amount_a)?;
+        }
+
+        if amount_b > 0 {
+            let cpi_accounts = Transfer {
+                from: ctx.accounts.depositor_token_b.to_account_info(),
+                to: ctx.accounts.vault_b.to_account_info(),
+                authority: ctx.accounts.depositor.to_account_info(),
+            };
+            let cpi_ctx = CpiContext::new(ctx.accounts.token_program.key(), cpi_accounts);
+            token::transfer(cpi_ctx, amount_b)?;
+        }
+
+        emit!(LiquidityAdded {
+            market: ctx.accounts.market.key(),
+            depositor: ctx.accounts.depositor.key(),
+            amount_a,
+            amount_b,
         });
 
         Ok(())
@@ -81,6 +135,10 @@ pub enum SwapError {
     SlippageExceeded,
     #[msg("Mints must be in canonical order (mint_a < mint_b)")]
     MintOrder,
+    #[msg("Only the market authority can perform this action")]
+    Unauthorized,
+    #[msg("Token account does not match the market mint")]
+    InvalidMint,
 }
 
 #[derive(Accounts)]
@@ -133,4 +191,76 @@ pub struct MarketInitialized {
     pub token_mint_b: Pubkey,
     pub decimals_a: u8,
     pub decimals_b: u8,
+}
+
+#[derive(Accounts)]
+pub struct SetPrice<'info> {
+    /// 🇪🇸 NOTA: `has_one` y `Signer` juntos equivalen a
+    /// `require(msg.sender == market.authority)` de Solidity.
+    /// Por separado no valen nada: `has_one` sin `Signer` dejaría que cualquiera
+    /// pase la pubkey del authority sin demostrar que la controla.
+    #[account(
+        mut,
+        has_one = authority @ SwapError::Unauthorized,
+        seeds = [b"market", market.token_mint_a.as_ref(), market.token_mint_b.as_ref()],
+        bump = market.bump,
+    )]
+    pub market: Account<'info, MarketAccount>,
+
+    pub authority: Signer<'info>,
+}
+
+#[event]
+pub struct PriceSet {
+    pub market: Pubkey,
+    pub authority: Pubkey,
+    pub price: u64,
+}
+#[derive(Accounts)]
+pub struct AddLiquidity<'info> {
+    #[account(
+        seeds = [b"market", market.token_mint_a.as_ref(), market.token_mint_b.as_ref()],
+        bump = market.bump,
+    )]
+    pub market: Account<'info, MarketAccount>,
+
+    #[account(
+        mut,
+        seeds = [b"vault_a", market.key().as_ref()],
+        bump = market.vault_a_bump,
+    )]
+    pub vault_a: Account<'info, TokenAccount>,
+
+    #[account(
+        mut,
+        seeds = [b"vault_b", market.key().as_ref()],
+        bump = market.vault_b_bump,
+    )]
+    pub vault_b: Account<'info, TokenAccount>,
+
+    /// 🇪🇸 NOTA: ATA del depositante. El `constraint` impide que pase una cuenta
+    /// de otro token — el caller elige las cuentas, así que hay que verificar.
+    #[account(
+        mut,
+        constraint = depositor_token_a.mint == market.token_mint_a @ SwapError::InvalidMint,
+    )]
+    pub depositor_token_a: Account<'info, TokenAccount>,
+
+    #[account(
+        mut,
+        constraint = depositor_token_b.mint == market.token_mint_b @ SwapError::InvalidMint,
+    )]
+    pub depositor_token_b: Account<'info, TokenAccount>,
+
+    pub depositor: Signer<'info>,
+
+    pub token_program: Program<'info, Token>,
+}
+
+#[event]
+pub struct LiquidityAdded {
+    pub market: Pubkey,
+    pub depositor: Pubkey,
+    pub amount_a: u64,
+    pub amount_b: u64,
 }
