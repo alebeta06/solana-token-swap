@@ -103,4 +103,4 @@ Check your Anchor version with `avm list`. `anchor --version` can report a stale
 
 ## Author
 
-Alejandro Betancourt · [GitHub](https://github.com/alebeta06) · [X](https://x.com/Ale_Beta) · [LinkedIn](https://www.linkedin.com/in/alebeta/)
+Alejandro Betancourt · [X](https://x.com/Ale_Beta) · [LinkedIn](https://www.linkedin.com/in/alebeta/)
