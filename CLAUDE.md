@@ -15,6 +15,15 @@ Solana y Rust** — explicar antes de implementar, comparando siempre con Solidi
   symlinks). Anchor la sobreescribe en cada build.
 - **NUNCA borrar `target/deploy/` entero.** Contiene la keypair del programa; borrarla
   genera un program ID nuevo y hay que resincronizar.
+- **NUNCA activar `init-if-needed`** en el `Cargo.toml`. Es el footgun conocido de
+  Anchor: permite que una cuenta ya existente pase la constraint sin error, así que sin
+  una comprobación explícita un atacante puede re-inicializarla y **resetear el estado**.
+  Las ATAs se crean desde el cliente con `createAssociatedTokenAccountInstruction`, como
+  instrucción separada en la misma transacción. Se activó por error en la Fase 1 y se
+  retiró en la Fase 2 al comprobar que no se usaba.
+- **NUNCA activar una feature "por si acaso".** Una feature encendida y sin usar amplía
+  la superficie de ataque a cambio de nada, y el siguiente que lea el código asumirá que
+  está ahí por algún motivo.
 
 ---
 
@@ -97,6 +106,15 @@ El material del curso (videos) es **anterior a Anchor 0.31**; el proyecto va en
 - `ctx.bumps.<cuenta>` en vez de recibir bumps como parámetros de instrucción
 - `#[derive(InitSpace)]` + `MarketAccount::INIT_SPACE` en vez de constantes manuales
 
+**Verificado en Fase 2:**
+
+- ⚠️ **`CpiContext::new` recibe `Pubkey`** como primer argumento, **no `AccountInfo`**
+  (cambió respecto a 0.31). Usar `token_program.key()`, no `.to_account_info()`
+- El struct `Transfer { from, to, authority }` **no cambió** de forma
+- `token::transfer` **no está deprecado** en `anchor-spl` 1.2.0
+- Anchor rechaza que **la misma cuenta mutable aparezca dos veces** en un contexto,
+  antes de evaluar tus constraints (`ConstraintDuplicateMutableAccount`)
+
 **Cambios de 1.0+ ya aplicados:**
 
 - Paquete TypeScript: `@coral-xyz/anchor` → **`@anchor-lang/core`**
@@ -121,6 +139,30 @@ El material del curso (videos) es **anterior a Anchor 0.31**; el proyecto va en
 
 ---
 
+## Modelo de autorización (precisión importante)
+
+⚠️ **SPL Token SÍ tiene allowance.** La `TokenAccount` guarda `delegate: COption<Pubkey>`
+y `delegated_amount: u64`, y el programa expone `Approve` y `Revoke`. Es el mismo
+mecanismo conceptual del ERC20.
+
+Lo correcto **no** es "en Solana no hay allowance", sino:
+
+> **Este programa no necesita allowance** porque la firma del usuario sobre la
+> transacción se propaga al CPI. La transacción previa de `approve` que en EVM sería
+> obligatoria aquí sobra.
+
+El `delegate` se usa cuando quien mueve los tokens **no puede firmar** en esa
+transacción — no es nuestro caso.
+
+Las dos direcciones de un CPI:
+
+| Dirección        | Contexto                              | Quién firma                             |
+| ---------------- | ------------------------------------- | --------------------------------------- |
+| Usuario → bóveda | `CpiContext::new`                     | El usuario, por propagación de su firma |
+| Bóveda → usuario | `CpiContext::new_with_signer` + seeds | El PDA, autorizado por el runtime       |
+
+---
+
 ## Riesgos técnicos — verificar en cada cambio
 
 1. **Aritmética en `u128`**, vuelta a `u64` con `try_into()`. `u64` desborda con
@@ -130,22 +172,50 @@ El material del curso (videos) es **anterior a Anchor 0.31**; el proyecto va en
 3. **El truncamiento debe favorecer al pool en ambas direcciones.**
    Invariante: A→B→A nunca devuelve más de lo que entró.
 4. **`set_price` requiere `has_one = authority` Y `Signer`.** Por separado no valen nada.
+   ✅ implementado y probado en Fase 2.
 5. **Output cero tras truncar** debe dar error explícito, no quedarse los tokens.
 6. **Liquidez insuficiente** con error tipado antes del CPI.
 7. **`add_liquidity` con ambos importes a cero** debe fallar, no devolver `Ok`.
+   ✅ implementado y probado en Fase 2.
+8. **Account confusion:** lo que impide que pasen la bóveda de otro mercado son las
+   **`seeds`**, no el `Signer`. Anchor re-deriva la dirección desde `market.key()` y
+   la compara. El atacante firma legítimamente su propia transacción; el problema
+   nunca es la identidad, son las cuentas que pasa.
 
 ---
 
 ## Estado del programa
 
-**Fase 1 completada** ✅ — `MarketAccount` + `initialize_market` + 5 tests en verde.
+**Fases 0–2 completadas** ✅ — `initialize_market`, `set_price`, `add_liquidity`,
+3 eventos y **12 tests en verde**.
 
-Definidos pero aún sin usar: `PriceNotSet`, `InsufficientLiquidity`, `MathOverflow`,
-`ZeroOutput`, `SlippageExceeded`, `ZeroAmount`.
+```
+initialize_market
+  ✔ stores the authority and both mints
+  ✔ reads decimals from the mints instead of trusting the caller
+  ✔ starts with price unset
+  ✔ creates both vaults owned by the market PDA
+  ✔ rejects mints passed in non-canonical order
+set_price
+  ✔ lets the authority set the price
+  ✔ rejects a price of zero
+  ✔ rejects anyone who is not the market authority
+add_liquidity
+  ✔ moves tokens from the depositor into both vaults
+  ✔ accepts a deposit of only one side
+  ✔ rejects a deposit where both amounts are zero
+  ✔ rejects a token account whose mint does not match the market
+```
 
-**Siguiente:** Fase 2 — `set_price` + `add_liquidity`.
-⚠️ Verificar si `token::transfer` está deprecado en `anchor-spl` 1.2.0 a favor de
-`transfer_checked`, que además valida mint y decimales en el propio CPI.
+**Errores en uso:** `ZeroAmount`, `MintOrder`, `InvalidMint`, `Unauthorized`.
+**Definidos pero aún sin usar:** `PriceNotSet`, `InsufficientLiquidity`, `MathOverflow`,
+`ZeroOutput`, `SlippageExceeded` — los consumen los swaps.
+
+**Siguiente:** Fase 3 — `swap_a_to_b` con aritmética en `u128`, `min_amount_out`, y el
+primer `CpiContext::new_with_signer` (el PDA firmando la salida de la bóveda).
+
+⚠️ **Deuda de la suite:** los tests comparten estado en el ledger y el orden importa
+(`set_price` debe correr antes que `add_liquidity`). Revisar en la Fase 5.
 
 ---
 
@@ -169,6 +239,7 @@ Definidos pero aún sin usar: `PriceNotSet`, `InsufficientLiquidity`, `MathOverf
   X https://x.com/Ale_Beta · LinkedIn https://www.linkedin.com/in/alebeta/
 - `data-testid` en todo elemento interactivo desde el inicio
 - Conversión unidades base ↔ display centralizada en un único módulo, con tests
+- Las ATAs que falten se crean **desde el cliente**, nunca con `init-if-needed`
 - ⚠️ El mapeo "token que el usuario ve" ↔ A/B necesita test propio: con orden canónico,
   "vender USDC" puede ser `swap_a_to_b` o `swap_b_to_a` según el orden de las pubkeys.
   El patrón de ordenación está en el `before()` del test de Fase 1
