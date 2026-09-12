@@ -243,3 +243,34 @@ primer `CpiContext::new_with_signer` (el PDA firmando la salida de la bóveda).
 - ⚠️ El mapeo "token que el usuario ve" ↔ A/B necesita test propio: con orden canónico,
   "vender USDC" puede ser `swap_a_to_b` o `swap_b_to_a` según el orden de las pubkeys.
   El patrón de ordenación está en el `before()` del test de Fase 1
+
+---
+
+## ⛔ MCP de Solana — `program_autofixer` obligatorio
+
+Este repo tiene configurado el MCP oficial de Solana (`solana-mcp`, HTTP remoto,
+**scope local**: solo se carga en este proyecto). Expone 5 tools: `list_sections`,
+`get_documentation`, `Solana_Documentation_Search`, `Solana_Expert__Ask_For_Help` y
+`program_autofixer`.
+
+**Regla:** antes de devolver CUALQUIER código Rust de este repo —programa Anchor,
+instrucción nueva, refactor de una existente— pasarlo por `program_autofixer`, que
+detecta antipatrones de seguridad de Anchor y Pinocchio.
+
+El bucle no es opcional y no termina en la primera pasada:
+
+1. Llamar a `program_autofixer` con el Rust propuesto.
+2. Aplicar los fixes que devuelva.
+3. Si `require_another_tool_call_after_fixing` es `true`, **volver al paso 1** con el
+   código ya corregido.
+4. Repetir hasta que `require_another_tool_call_after_fixing` sea `false`.
+5. Solo entonces devolver el código.
+
+⚠️ **Dos avisos que no anulan la regla, pero hay que tener presentes:**
+
+- `program_autofixer` **envía este código Rust a un tercero**. Vale para un proyecto de
+  máster con repo público; no es el patrón a copiar en una auditoría o en código privado.
+- El índice sirve documentación de Anchor "actual", **sin pinning de versión**. Este repo
+  está clavado en `anchor-lang` 1.2.0 y `solana_version = "4.2.2"` (ver "Entorno" y
+  "Deriva de versión"): si un fix propone una API que no existe en 1.2.0, **manda el
+  `Cargo.toml` de este repo**, no el autofixer.
