@@ -4,6 +4,9 @@ Proyecto del Máster CodeCrypto (Blockchain Engineering & AI), Módulo 15 — To
 Swap de tokens SPL con precio fijo, en Anchor. **Primera experiencia del autor con
 Solana y Rust** — explicar antes de implementar, comparando siempre con Solidity/EVM.
 
+> ⚠️ **Estado actual: Fases 0–4 completadas. La siguiente es la Fase 5.**
+> Son 11 fases (0 a 10). Ver "Estado del programa" más abajo.
+
 ---
 
 ## ⛔ Reglas duras
@@ -18,12 +21,13 @@ Solana y Rust** — explicar antes de implementar, comparando siempre con Solidi
 - **NUNCA activar `init-if-needed`** en el `Cargo.toml`. Es el footgun conocido de
   Anchor: permite que una cuenta ya existente pase la constraint sin error, así que sin
   una comprobación explícita un atacante puede re-inicializarla y **resetear el estado**.
-  Las ATAs se crean desde el cliente con `createAssociatedTokenAccountInstruction`, como
-  instrucción separada en la misma transacción. Se activó por error en la Fase 1 y se
-  retiró en la Fase 2 al comprobar que no se usaba.
+  Las ATAs se crean desde el cliente con `createAssociatedTokenAccountInstruction`.
+  Se activó por error en la Fase 1 y se retiró en la Fase 2 al comprobar que no se usaba.
 - **NUNCA activar una feature "por si acaso".** Una feature encendida y sin usar amplía
-  la superficie de ataque a cambio de nada, y el siguiente que lea el código asumirá que
-  está ahí por algún motivo.
+  la superficie de ataque a cambio de nada.
+- **NUNCA asumir que "token A" es el de menos decimales.** El orden A/B lo decide la
+  comparación de pubkeys (`mint_a < mint_b`), no los decimales ni el valor. Cualquier
+  test o código de cliente que lo asuma está mal. Ya causó un fallo en la Fase 4.
 
 ---
 
@@ -76,6 +80,22 @@ anchor test --skip-local-validator
 Sin `rm -rf test-ledger`, el ledger conserva los mercados de la corrida anterior y los
 tests fallan con "account already in use".
 
+### ⚠️ Cuándo el IDL se queda atrás
+
+Si el cliente TS falla con `program.methods.X is not a function`, el IDL no incluye la
+instrucción. Dos causas, en este orden:
+
+1. **La función no está dentro del `#[program]`.** Compila igual (es una `pub fn`
+   válida) pero Anchor no la ve como instrucción y no la mete en el IDL. Pasó en la
+   Fase 4. Verificar con:
+   `grep -n "pub mod solana_token_swap\|pub fn \|^}" programs/solana-token-swap/src/lib.rs`
+   — toda instrucción debe estar antes del `}` que cierra el módulo.
+2. **Caché de compilación.** `anchor build` que termina en menos de un segundo no
+   regeneró nada:
+   `cargo clean -p solana-token-swap && anchor build`
+
+Comprobar siempre: `grep -c "<nombre_instruccion>" target/idl/solana_token_swap.json`
+
 ### Verificación del entorno
 
 ```bash
@@ -91,6 +111,44 @@ Reporta 0.31.1 aunque estés en 1.2.0. La fuente de verdad es `avm list`.
 
 ---
 
+## MCP oficial de Solana (alta en Fase 4)
+
+`solana-mcp` → `https://mcp.solana.com/mcp`, scope local, sin API key. Cinco tools:
+`list_sections`, `get_documentation`, `Solana_Documentation_Search`,
+`Solana_Expert__Ask_For_Help`, `program_autofixer`.
+
+### Límites conocidos
+
+- **El índice NO tiene pinning de versión** y empuja Anchor v2 / `@solana/kit`. Este
+  repo va en **1.2.0** con `@anchor-lang/core`. Si un fix propone una API que no existe
+  en 1.2.0, **manda el `Cargo.toml` del repo**.
+- **`program_autofixer` envía el código a un tercero** (servidores de la Solana
+  Foundation). Aceptable en un repo público de máster. **NO es patrón a copiar en
+  auditoría ni en código privado.**
+- **Un resultado limpio no es una auditoría.** Es un linter estático de antipatrones
+  catalogados de Anchor/Pinocchio. No razona sobre el dominio: no sabe que los decimales
+  6/9 son deliberados, ni que `mint_a < mint_b` es una invariante de diseño, ni valida
+  la invariante A→B→A. Eso lo cubren los tests y el criterio.
+
+### Resultado de la Fase 4
+
+`program_autofixer` sobre el `lib.rs` completo: **cero issues, cero suggestions**, una
+sola pasada. Nada que aplicar.
+
+> 📌 Dato para el README y el video: los cuatro bugs encontrados en el código de
+> referencia del curso (decimales del caller, división anidada, `set_price` sin
+> authority, `add_liquidity` que devuelve `Ok` sin hacer nada) son del tipo que **un
+> linter no detecta**. Pendiente de verificar pasando el código de referencia por la
+> misma herramienta.
+
+### Fuentes del índice ya identificadas como útiles
+
+`gh-sealevel-attacks` (catálogo de fallos de Anchor: missing signer/owner checks,
+account confusion), `gh-anchor-amm-2023` (AMM de producto constante),
+`gh-anchor-escrow-2024` (token accounts con PDA owner, `new_with_signer`), `gh-spl-ata`.
+
+---
+
 ## Deriva de versión — regla operativa
 
 El material del curso (videos) es **anterior a Anchor 0.31**; el proyecto va en
@@ -99,7 +157,7 @@ El material del curso (videos) es **anterior a Anchor 0.31**; el proyecto va en
 > **Las lecciones son la autoridad sobre el DISEÑO. El compilador y la documentación
 > son la autoridad sobre la SINTAXIS.**
 
-**Verificado en Fase 1 — lo que SÍ funciona en 1.2.0:**
+**Verificado en Fase 1:**
 
 - `use anchor_spl::token::{Mint, Token, TokenAccount};` sigue siendo válido
 - `Sysvar<'info, Rent>` **ya no hace falta** en `init` (la referencia lo incluía)
@@ -112,8 +170,15 @@ El material del curso (videos) es **anterior a Anchor 0.31**; el proyecto va en
   (cambió respecto a 0.31). Usar `token_program.key()`, no `.to_account_info()`
 - El struct `Transfer { from, to, authority }` **no cambió** de forma
 - `token::transfer` **no está deprecado** en `anchor-spl` 1.2.0
-- Anchor rechaza que **la misma cuenta mutable aparezca dos veces** en un contexto,
-  antes de evaluar tus constraints (`ConstraintDuplicateMutableAccount`)
+- Anchor rechaza que **la misma cuenta mutable aparezca dos veces** en un contexto
+  (`ConstraintDuplicateMutableAccount`)
+
+**Verificado en Fase 3:**
+
+- `CpiContext::new_with_signer(program_key, accounts, signer_seeds)` funciona con las
+  seeds como `&[&[&[u8]]]` (array de arrays de seeds, por si firman varios PDAs)
+- Copiar las `Pubkey` de los mints a variables locales antes de `as_ref()` evita
+  conflictos con el borrow checker al usar `ctx.accounts.market` después
 
 **Cambios de 1.0+ ya aplicados:**
 
@@ -124,7 +189,7 @@ El material del curso (videos) es **anterior a Anchor 0.31**; el proyecto va en
 ## Decisiones de arquitectura cerradas
 
 - Instrucciones: `initialize_market`, `set_price`, `add_liquidity`, `swap_a_to_b`,
-  `swap_b_to_a`
+  `swap_b_to_a` — **las cinco implementadas**
 - **Dos instrucciones de swap**, no una con flag de dirección
 - Seeds: `["market", mint_a, mint_b]`, `["vault_a", market]`, `["vault_b", market]`
 - **Orden canónico obligatorio:** `mint_a.key() < mint_b.key()`
@@ -142,8 +207,7 @@ El material del curso (videos) es **anterior a Anchor 0.31**; el proyecto va en
 ## Modelo de autorización (precisión importante)
 
 ⚠️ **SPL Token SÍ tiene allowance.** La `TokenAccount` guarda `delegate: COption<Pubkey>`
-y `delegated_amount: u64`, y el programa expone `Approve` y `Revoke`. Es el mismo
-mecanismo conceptual del ERC20.
+y `delegated_amount: u64`, y el programa expone `Approve` y `Revoke`.
 
 Lo correcto **no** es "en Solana no hay allowance", sino:
 
@@ -151,15 +215,36 @@ Lo correcto **no** es "en Solana no hay allowance", sino:
 > transacción se propaga al CPI. La transacción previa de `approve` que en EVM sería
 > obligatoria aquí sobra.
 
-El `delegate` se usa cuando quien mueve los tokens **no puede firmar** en esa
-transacción — no es nuestro caso.
-
-Las dos direcciones de un CPI:
-
 | Dirección        | Contexto                              | Quién firma                             |
 | ---------------- | ------------------------------------- | --------------------------------------- |
 | Usuario → bóveda | `CpiContext::new`                     | El usuario, por propagación de su firma |
 | Bóveda → usuario | `CpiContext::new_with_signer` + seeds | El PDA, autorizado por el runtime       |
+
+Las seeds del `new_with_signer` derivan **el mercado**, no la bóveda. El mismo PDA firma
+en ambas direcciones; lo que cambia es de qué cuenta salen los tokens.
+
+---
+
+## Aritmética de precios
+
+```
+A→B:  amount_b = (amount_a × price × 10^dec_b) / (10^PRICE_DECIMALS × 10^dec_a)
+B→A:  amount_a = (amount_b × 10^PRICE_DECIMALS × 10^dec_a) / (price × 10^dec_b)
+```
+
+`price` y `10^PRICE_DECIMALS` **intercambian de lado**, igual que `dec_a` y `dec_b`.
+Es un reflejo exacto.
+
+⚠️ **Tres escalas distintas conviven y NO son la misma:**
+
+|                  | Valor | Quién la decide                    |
+| ---------------- | ----- | ---------------------------------- |
+| `PRICE_DECIMALS` | 6     | Constante del programa             |
+| `decimals_a`     | 6 o 9 | El mint, según el orden de pubkeys |
+| `decimals_b`     | 9 o 6 | El mint, según el orden de pubkeys |
+
+En el denominador de A→B hay dos factores que **por casualidad pueden valer lo mismo**:
+`10^PRICE_DECIMALS` y `10^dec_a`. No se multiplica el token A por sí mismo.
 
 ---
 
@@ -167,55 +252,78 @@ Las dos direcciones de un CPI:
 
 1. **Aritmética en `u128`**, vuelta a `u64` con `try_into()`. `u64` desborda con
    9 decimales y precio de 6 (`amount × price × 10^9` ≈ 10²⁷ vs `u64::MAX` ≈ 1,8×10¹⁹).
+   ✅ implementado en ambas funciones.
 2. **Todas las multiplicaciones antes de todas las divisiones.** Ninguna división
-   anidada: trunca y el denominador puede colapsar a cero.
-3. **El truncamiento debe favorecer al pool en ambas direcciones.**
-   Invariante: A→B→A nunca devuelve más de lo que entró.
-4. **`set_price` requiere `has_one = authority` Y `Signer`.** Por separado no valen nada.
-   ✅ implementado y probado en Fase 2.
-5. **Output cero tras truncar** debe dar error explícito, no quedarse los tokens.
-6. **Liquidez insuficiente** con error tipado antes del CPI.
-7. **`add_liquidity` con ambos importes a cero** debe fallar, no devolver `Ok`.
-   ✅ implementado y probado en Fase 2.
+   anidada: trunca y el denominador puede colapsar a cero. ✅
+3. **El truncamiento debe favorecer al pool en ambas direcciones.** Como truncar solo
+   puede REDUCIR la salida, está garantizado por construcción. ✅ probado con la
+   invariante A→B→A.
+4. **`set_price` requiere `has_one = authority` Y `Signer`.** ✅ probado.
+5. **Output cero tras truncar** debe dar error explícito. ✅ `ZeroOutput`.
+6. **Liquidez insuficiente** con error tipado antes del CPI. ✅ en ambos swaps,
+   mirando la bóveda correcta en cada dirección.
+7. **`add_liquidity` con ambos importes a cero** debe fallar. ✅
 8. **Account confusion:** lo que impide que pasen la bóveda de otro mercado son las
-   **`seeds`**, no el `Signer`. Anchor re-deriva la dirección desde `market.key()` y
-   la compara. El atacante firma legítimamente su propia transacción; el problema
-   nunca es la identidad, son las cuentas que pasa.
+   **`seeds`**, NO el `Signer`. El atacante firma legítimamente su propia transacción.
+   ✅ probado — el error que salta es `ConstraintSeeds`, de Anchor.
+9. **`price` en el denominador de B→A.** Sin `require!(price > 0, PriceNotSet)` antes
+   de la aritmética, saldría un `MathOverflow` engañoso. ✅
 
 ---
 
 ## Estado del programa
 
-**Fases 0–2 completadas** ✅ — `initialize_market`, `set_price`, `add_liquidity`,
-3 eventos y **12 tests en verde**.
+**Fases 0–4 completadas** ✅ — programa completo con **25 tests en verde**.
 
 ```
-initialize_market
+initialize_market (5)
   ✔ stores the authority and both mints
   ✔ reads decimals from the mints instead of trusting the caller
   ✔ starts with price unset
   ✔ creates both vaults owned by the market PDA
   ✔ rejects mints passed in non-canonical order
-set_price
+set_price (3)
   ✔ lets the authority set the price
   ✔ rejects a price of zero
   ✔ rejects anyone who is not the market authority
-add_liquidity
+add_liquidity (4)
   ✔ moves tokens from the depositor into both vaults
   ✔ accepts a deposit of only one side
   ✔ rejects a deposit where both amounts are zero
   ✔ rejects a token account whose mint does not match the market
+swap_a_to_b (6)
+  ✔ converts at the market price, honouring both token scales
+  ✔ moves the input tokens into vault_a
+  ✔ rejects a zero input
+  ✔ rejects an output below the requested minimum
+  ✔ rejects a swap larger than the liquidity in vault_b
+  ✔ rejects a vault belonging to a different market
+swap_b_to_a (7)
+  ✔ applies the inverse of the market price
+  ✔ moves the input tokens into vault_b
+  ✔ never returns more than went in on a round trip A→B→A
+  ✔ rejects a zero input
+  ✔ rejects an input so small that the output truncates to zero
+  ✔ rejects an output below the requested minimum
+  ✔ rejects a swap larger than the liquidity in vault_a
 ```
 
-**Errores en uso:** `ZeroAmount`, `MintOrder`, `InvalidMint`, `Unauthorized`.
-**Definidos pero aún sin usar:** `PriceNotSet`, `InsufficientLiquidity`, `MathOverflow`,
-`ZeroOutput`, `SlippageExceeded` — los consumen los swaps.
+**Todos los errores de `SwapError` están en uso.**
 
-**Siguiente:** Fase 3 — `swap_a_to_b` con aritmética en `u128`, `min_amount_out`, y el
-primer `CpiContext::new_with_signer` (el PDA firmando la salida de la bóveda).
+**Rúbrica cubierta:** mercado+liquidez con PDAs (30%) ✅ · swap A→B (20%) ✅ ·
+swap B→A (30%) ✅ · tests (parte del 20%) ✅ · documentación ⬜
 
-⚠️ **Deuda de la suite:** los tests comparten estado en el ledger y el orden importa
-(`set_price` debe correr antes que `add_liquidity`). Revisar en la Fase 5.
+### Siguiente: Fase 5 — endurecer la suite
+
+- ⚠️ **Los tests comparten estado en el ledger y el orden importa.** `set_price` debe
+  correr antes que `add_liquidity`, y los swaps dependen de la liquidez que dejaron los
+  anteriores. Hacerlos independientes o documentar la dependencia.
+- ⚠️ **Los `catch` asumen la forma del error.** Si la transacción no falla, el
+  `assert.fail` lanza un error que no es de Anchor y el mensaje resultante
+  (`Cannot read properties of undefined`) oculta la causa real. Hace falta un helper
+  que distinga "no falló" de "falló con otro código".
+- Falta test de `PriceNotSet` (swap sobre un mercado recién creado, sin precio).
+- Falta test de account confusion en `swap_b_to_a` (solo está en `swap_a_to_b`).
 
 ---
 
@@ -225,6 +333,8 @@ primer `CpiContext::new_with_signer` (el PDA firmando la salida de la bóveda).
 - Código y doc-comments en inglés; notas pedagógicas con prefijo `🇪🇸 NOTA:` en español
 - **Tests: nombres como aserción de lo que garantiza el programa**, no descripción del
   test. Ej: `"reads decimals from the mints instead of trusting the caller"`
+- Los `describe` van todos al mismo nivel dentro del `describe` raíz, nunca anidados
+  dentro del `before()`
 - Rama única `main`
 
 ---
@@ -240,37 +350,7 @@ primer `CpiContext::new_with_signer` (el PDA firmando la salida de la bóveda).
 - `data-testid` en todo elemento interactivo desde el inicio
 - Conversión unidades base ↔ display centralizada en un único módulo, con tests
 - Las ATAs que falten se crean **desde el cliente**, nunca con `init-if-needed`
-- ⚠️ El mapeo "token que el usuario ve" ↔ A/B necesita test propio: con orden canónico,
-  "vender USDC" puede ser `swap_a_to_b` o `swap_b_to_a` según el orden de las pubkeys.
-  El patrón de ordenación está en el `before()` del test de Fase 1
-
----
-
-## ⛔ MCP de Solana — `program_autofixer` obligatorio
-
-Este repo tiene configurado el MCP oficial de Solana (`solana-mcp`, HTTP remoto,
-**scope local**: solo se carga en este proyecto). Expone 5 tools: `list_sections`,
-`get_documentation`, `Solana_Documentation_Search`, `Solana_Expert__Ask_For_Help` y
-`program_autofixer`.
-
-**Regla:** antes de devolver CUALQUIER código Rust de este repo —programa Anchor,
-instrucción nueva, refactor de una existente— pasarlo por `program_autofixer`, que
-detecta antipatrones de seguridad de Anchor y Pinocchio.
-
-El bucle no es opcional y no termina en la primera pasada:
-
-1. Llamar a `program_autofixer` con el Rust propuesto.
-2. Aplicar los fixes que devuelva.
-3. Si `require_another_tool_call_after_fixing` es `true`, **volver al paso 1** con el
-   código ya corregido.
-4. Repetir hasta que `require_another_tool_call_after_fixing` sea `false`.
-5. Solo entonces devolver el código.
-
-⚠️ **Dos avisos que no anulan la regla, pero hay que tener presentes:**
-
-- `program_autofixer` **envía este código Rust a un tercero**. Vale para un proyecto de
-  máster con repo público; no es el patrón a copiar en una auditoría o en código privado.
-- El índice sirve documentación de Anchor "actual", **sin pinning de versión**. Este repo
-  está clavado en `anchor-lang` 1.2.0 y `solana_version = "4.2.2"` (ver "Entorno" y
-  "Deriva de versión"): si un fix propone una API que no existe en 1.2.0, **manda el
-  `Cargo.toml` de este repo**, no el autofixer.
+- ⚠️ **El mapeo "token que el usuario ve" ↔ A/B necesita test propio.** Con orden
+  canónico, "vender USDC" puede ser `swap_a_to_b` o `swap_b_to_a` según el orden de las
+  pubkeys. El patrón de ordenación está en el `before()` del test. Asumir la dirección
+  ya causó un fallo en la Fase 4 — y fue en un test, que es donde menos duele.
