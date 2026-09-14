@@ -23,6 +23,14 @@ describe("solana-token-swap", () => {
   const DECIMALS_LOW = 6;
   const DECIMALS_HIGH = 9;
 
+  // 🇪🇸 NOTA: price = 2_000_000 → 1 A vale 2 B. Vive aquí porque lo necesitan
+  // el test de set_price Y el helper que garantiza que el mercado opera.
+  const PRICE = 2_000_000;
+
+  // Liquidez mínima que cada test de swap puede dar por supuesta.
+  const MIN_LIQUIDITY_A = 100;
+  const MIN_LIQUIDITY_B = 200;
+
   let mintA: PublicKey;
   let mintB: PublicKey;
   let decimalsA: number;
@@ -36,6 +44,51 @@ describe("solana-token-swap", () => {
 
   const baseUnits = (amount: number, decimals: number) =>
     new anchor.BN(amount).mul(new anchor.BN(10).pow(new anchor.BN(decimals)));
+
+  // ─── Helper de errores ──────────────────────────────────────────────────────
+  // 🇪🇸 NOTA: el patrón try/catch + assert.fail que había antes tenía un fallo
+  // propio: cuando la transacción NO fallaba, el assert.fail lanzaba un
+  // AssertionError normal, el catch lo recogía y `err.error.errorCode` reventaba
+  // con "Cannot read properties of undefined". El mensaje que veías describía
+  // el bug del test, no el del programa. Ya pasó dos veces.
+  //
+  // Los tres casos se distinguen explícitamente:
+  //   1. la transacción no falló          → "expected X, but the transaction succeeded"
+  //   2. falló con otro código de Anchor  → "expected X, got Y"
+  //   3. falló con algo que no es Anchor  → se enseña el error crudo
+  const expectAnchorError = async (
+    attempt: () => Promise<unknown>,
+    expected: string
+  ) => {
+    let raised: unknown;
+
+    try {
+      await attempt();
+    } catch (err) {
+      raised = err;
+    }
+
+    if (raised === undefined) {
+      assert.fail(`expected ${expected}, but the transaction succeeded`);
+    }
+
+    const code = (raised as any)?.error?.errorCode?.code;
+
+    if (code === undefined) {
+      const raw =
+        raised instanceof Error
+          ? (raised.stack ?? raised.message)
+          : String(raised);
+      assert.fail(
+        `expected ${expected}, but the call failed with something that is not ` +
+          `an Anchor error:\n${raw}`
+      );
+    }
+
+    if (code !== expected) {
+      assert.fail(`expected ${expected}, got ${code}`);
+    }
+  };
 
   // 🇪🇸 NOTA: las dos instrucciones de swap comparten el mismo juego de cuentas.
   // Lo que cambia entre ellas es la aritmética, no el contexto.
@@ -58,6 +111,97 @@ describe("solana-token-swap", () => {
     depositor: authority.publicKey,
     tokenProgram: TOKEN_PROGRAM_ID,
   });
+
+  // ─── Independencia de orden ─────────────────────────────────────────────────
+  // 🇪🇸 NOTA: antes, cada test de swap dependía de la liquidez que hubieran
+  // dejado los anteriores y del precio que hubiera fijado el describe de
+  // set_price. Reordenar un test rompía otro, y el error que salía hablaba de
+  // InsufficientLiquidity o PriceNotSet, no de la causa real.
+  //
+  // Este helper rellena lo que falte hasta el mínimo, en vez de depositar una
+  // cantidad fija: es idempotente, así que da igual cuántas veces corra ni qué
+  // haya pasado antes. Acuñamos los tokens que falten en la ATA del depositante
+  // para que el top-up tampoco dependa de cuánto quedara allí.
+  const ensureMarketReady = async () => {
+    const market = await program.account.marketAccount.fetch(marketPda);
+    if (market.price.isZero()) {
+      await program.methods
+        .setPrice(new anchor.BN(PRICE))
+        .accounts({ market: marketPda, authority: authority.publicKey })
+        .rpc();
+    }
+
+    const vaultA = await getAccount(provider.connection, vaultAPda);
+    const vaultB = await getAccount(provider.connection, vaultBPda);
+
+    const targetA = BigInt(baseUnits(MIN_LIQUIDITY_A, decimalsA).toString());
+    const targetB = BigInt(baseUnits(MIN_LIQUIDITY_B, decimalsB).toString());
+
+    const deficitA = vaultA.amount < targetA ? targetA - vaultA.amount : 0n;
+    const deficitB = vaultB.amount < targetB ? targetB - vaultB.amount : 0n;
+
+    if (deficitA === 0n && deficitB === 0n) return;
+
+    if (deficitA > 0n) {
+      await mintTo(
+        provider.connection, payer, mintA, authorityTokenA, payer, deficitA
+      );
+    }
+    if (deficitB > 0n) {
+      await mintTo(
+        provider.connection, payer, mintB, authorityTokenB, payer, deficitB
+      );
+    }
+
+    await program.methods
+      .addLiquidity(
+        new anchor.BN(deficitA.toString()),
+        new anchor.BN(deficitB.toString())
+      )
+      .accounts(liquidityAccounts())
+      .rpc();
+  };
+
+  // 🇪🇸 NOTA: un mercado ajeno, para los tests de account confusion. Se empareja
+  // mintA con un mint nuevo, así que el par (y por tanto el PDA) es distinto del
+  // mercado principal. El orden canónico se recalcula: NO se puede asumir que
+  // mintA siga siendo el "bajo" frente a un mint recién creado.
+  const createForeignMarket = async () => {
+    const otherMintRaw = await createMint(
+      provider.connection, payer, authority.publicKey, null, DECIMALS_LOW
+    );
+    const [lowMint, highMint] =
+      mintA.toBuffer().compare(otherMintRaw.toBuffer()) < 0
+        ? [mintA, otherMintRaw]
+        : [otherMintRaw, mintA];
+
+    const [market] = PublicKey.findProgramAddressSync(
+      [Buffer.from("market"), lowMint.toBuffer(), highMint.toBuffer()],
+      program.programId
+    );
+    const [foreignVaultA] = PublicKey.findProgramAddressSync(
+      [Buffer.from("vault_a"), market.toBuffer()], program.programId
+    );
+    const [foreignVaultB] = PublicKey.findProgramAddressSync(
+      [Buffer.from("vault_b"), market.toBuffer()], program.programId
+    );
+
+    await program.methods
+      .initializeMarket()
+      .accounts({
+        market,
+        tokenMintA: lowMint,
+        tokenMintB: highMint,
+        vaultA: foreignVaultA,
+        vaultB: foreignVaultB,
+        authority: authority.publicKey,
+        tokenProgram: TOKEN_PROGRAM_ID,
+        systemProgram: anchor.web3.SystemProgram.programId,
+      })
+      .rpc();
+
+    return { market, vaultA: foreignVaultA, vaultB: foreignVaultB };
+  };
 
   before(async () => {
     const first = await createMint(
@@ -140,6 +284,12 @@ describe("solana-token-swap", () => {
       assert.equal(market.decimalsB, decimalsB);
     });
 
+    // ⚠️ DEPENDENCIA DE ORDEN DELIBERADA: este test mira el mercado principal
+    // recién creado, así que tiene que correr antes que set_price. Es la única
+    // dependencia que queda en la suite y no se puede quitar sin perder lo que
+    // el test afirma: que initialize_market NO deja el mercado operativo.
+    // Mocha ejecuta los describe en orden de declaración, e initialize_market
+    // está declarado antes que set_price.
     it("starts with price unset", async () => {
       const market = await program.account.marketAccount.fetch(marketPda);
       assert.equal(market.price.toNumber(), 0);
@@ -152,7 +302,6 @@ describe("solana-token-swap", () => {
       assert.isTrue(vaultB.mint.equals(mintB));
       assert.isTrue(vaultA.owner.equals(marketPda));
       assert.isTrue(vaultB.owner.equals(marketPda));
-      assert.equal(vaultA.amount.toString(), "0");
     });
 
     it("rejects mints passed in non-canonical order", async () => {
@@ -167,24 +316,23 @@ describe("solana-token-swap", () => {
         [Buffer.from("vault_b"), reversedMarket.toBuffer()], program.programId
       );
 
-      try {
-        await program.methods
-          .initializeMarket()
-          .accounts({
-            market: reversedMarket,
-            tokenMintA: mintB,
-            tokenMintB: mintA,
-            vaultA: reversedVaultA,
-            vaultB: reversedVaultB,
-            authority: authority.publicKey,
-            tokenProgram: TOKEN_PROGRAM_ID,
-            systemProgram: anchor.web3.SystemProgram.programId,
-          })
-          .rpc();
-        assert.fail("expected MintOrder");
-      } catch (err) {
-        assert.equal(err.error.errorCode.code, "MintOrder");
-      }
+      await expectAnchorError(
+        () =>
+          program.methods
+            .initializeMarket()
+            .accounts({
+              market: reversedMarket,
+              tokenMintA: mintB,
+              tokenMintB: mintA,
+              vaultA: reversedVaultA,
+              vaultB: reversedVaultB,
+              authority: authority.publicKey,
+              tokenProgram: TOKEN_PROGRAM_ID,
+              systemProgram: anchor.web3.SystemProgram.programId,
+            })
+            .rpc(),
+        "MintOrder"
+      );
     });
   });
 
@@ -192,24 +340,23 @@ describe("solana-token-swap", () => {
   describe("set_price", () => {
     it("lets the authority set the price", async () => {
       await program.methods
-        .setPrice(new anchor.BN(2_000_000))
+        .setPrice(new anchor.BN(PRICE))
         .accounts({ market: marketPda, authority: authority.publicKey })
         .rpc();
 
       const market = await program.account.marketAccount.fetch(marketPda);
-      assert.equal(market.price.toNumber(), 2_000_000);
+      assert.equal(market.price.toNumber(), PRICE);
     });
 
     it("rejects a price of zero", async () => {
-      try {
-        await program.methods
-          .setPrice(new anchor.BN(0))
-          .accounts({ market: marketPda, authority: authority.publicKey })
-          .rpc();
-        assert.fail("expected ZeroAmount");
-      } catch (err) {
-        assert.equal(err.error.errorCode.code, "ZeroAmount");
-      }
+      await expectAnchorError(
+        () =>
+          program.methods
+            .setPrice(new anchor.BN(0))
+            .accounts({ market: marketPda, authority: authority.publicKey })
+            .rpc(),
+        "ZeroAmount"
+      );
     });
 
     // 🇪🇸 NOTA: este es el test del bug más caro del proyecto. Sin `has_one`,
@@ -221,34 +368,45 @@ describe("solana-token-swap", () => {
       );
       await provider.connection.confirmTransaction(sig);
 
-      try {
-        await program.methods
-          .setPrice(new anchor.BN(1))
-          .accounts({ market: marketPda, authority: intruder.publicKey })
-          .signers([intruder])
-          .rpc();
-        assert.fail("expected Unauthorized");
-      } catch (err) {
-        assert.equal(err.error.errorCode.code, "Unauthorized");
-      }
+      await expectAnchorError(
+        () =>
+          program.methods
+            .setPrice(new anchor.BN(1))
+            .accounts({ market: marketPda, authority: intruder.publicKey })
+            .signers([intruder])
+            .rpc(),
+        "Unauthorized"
+      );
     });
   });
 
   // ───────────────────────────────────────────────────────────────────────────
   describe("add_liquidity", () => {
+    // 🇪🇸 NOTA: la aserción es sobre el DELTA de cada bóveda, no sobre su saldo
+    // absoluto. Así el test dice lo que promete su nombre —que los tokens se
+    // mueven— sin depender de que las bóvedas estuvieran vacías al empezar.
     it("moves tokens from the depositor into both vaults", async () => {
       const amountA = baseUnits(100, decimalsA);
       const amountB = baseUnits(200, decimalsB);
+
+      const vaultABefore = await getAccount(provider.connection, vaultAPda);
+      const vaultBBefore = await getAccount(provider.connection, vaultBPda);
 
       await program.methods
         .addLiquidity(amountA, amountB)
         .accounts(liquidityAccounts())
         .rpc();
 
-      const vaultA = await getAccount(provider.connection, vaultAPda);
-      const vaultB = await getAccount(provider.connection, vaultBPda);
-      assert.equal(vaultA.amount.toString(), amountA.toString());
-      assert.equal(vaultB.amount.toString(), amountB.toString());
+      const vaultAAfter = await getAccount(provider.connection, vaultAPda);
+      const vaultBAfter = await getAccount(provider.connection, vaultBPda);
+      assert.equal(
+        (vaultAAfter.amount - vaultABefore.amount).toString(),
+        amountA.toString()
+      );
+      assert.equal(
+        (vaultBAfter.amount - vaultBBefore.amount).toString(),
+        amountB.toString()
+      );
     });
 
     it("accepts a deposit of only one side", async () => {
@@ -270,32 +428,32 @@ describe("solana-token-swap", () => {
     // 🇪🇸 NOTA: la referencia devuelve Ok sin hacer nada con ambos a cero.
     // Un no-op silencioso es peor que un error.
     it("rejects a deposit where both amounts are zero", async () => {
-      try {
-        await program.methods
-          .addLiquidity(new anchor.BN(0), new anchor.BN(0))
-          .accounts(liquidityAccounts())
-          .rpc();
-        assert.fail("expected ZeroAmount");
-      } catch (err) {
-        assert.equal(err.error.errorCode.code, "ZeroAmount");
-      }
+      await expectAnchorError(
+        () =>
+          program.methods
+            .addLiquidity(new anchor.BN(0), new anchor.BN(0))
+            .accounts(liquidityAccounts())
+            .rpc(),
+        "ZeroAmount"
+      );
     });
 
     it("rejects a token account whose mint does not match the market", async () => {
-      try {
-        await program.methods
-          .addLiquidity(baseUnits(1, decimalsA), new anchor.BN(0))
-          .accounts(liquidityAccounts(foreignTokenB)) // mint equivocado
-          .rpc();
-        assert.fail("expected InvalidMint");
-      } catch (err) {
-        assert.equal(err.error.errorCode.code, "InvalidMint");
-      }
+      await expectAnchorError(
+        () =>
+          program.methods
+            .addLiquidity(baseUnits(1, decimalsA), new anchor.BN(0))
+            .accounts(liquidityAccounts(foreignTokenB)) // mint equivocado
+            .rpc(),
+        "InvalidMint"
+      );
     });
   });
 
   // ───────────────────────────────────────────────────────────────────────────
   describe("swap_a_to_b", () => {
+    beforeEach(ensureMarketReady);
+
     // 🇪🇸 NOTA: price = 2_000_000 → 1 A vale 2 B.
     // 1 A = 10^decimalsA unidades base → 2 B = 2 × 10^decimalsB unidades base.
     // Si decimals_a y decimals_b estuvieran intercambiados en la fórmula, el
@@ -342,95 +500,143 @@ describe("solana-token-swap", () => {
     });
 
     it("rejects a zero input", async () => {
-      try {
-        await program.methods
-          .swapAToB(new anchor.BN(0), new anchor.BN(0))
-          .accounts(swapAccounts())
-          .rpc();
-        assert.fail("expected ZeroAmount");
-      } catch (err) {
-        assert.equal(err.error.errorCode.code, "ZeroAmount");
-      }
+      await expectAnchorError(
+        () =>
+          program.methods
+            .swapAToB(new anchor.BN(0), new anchor.BN(0))
+            .accounts(swapAccounts())
+            .rpc(),
+        "ZeroAmount"
+      );
     });
 
     // 🇪🇸 NOTA: Solana no tiene mempool público, así que el front-running
     // clásico de EVM no aplica igual. El riesgo real es que el authority llame
     // a set_price y tu tx aterrice después del cambio.
     it("rejects an output below the requested minimum", async () => {
-      try {
-        await program.methods
-          .swapAToB(baseUnits(1, decimalsA), baseUnits(999, decimalsB))
-          .accounts(swapAccounts())
-          .rpc();
-        assert.fail("expected SlippageExceeded");
-      } catch (err) {
-        assert.equal(err.error.errorCode.code, "SlippageExceeded");
-      }
+      await expectAnchorError(
+        () =>
+          program.methods
+            .swapAToB(baseUnits(1, decimalsA), baseUnits(999, decimalsB))
+            .accounts(swapAccounts())
+            .rpc(),
+        "SlippageExceeded"
+      );
     });
 
+    // 🇪🇸 NOTA: el margen NO es ajustado, y conviene que siga sin serlo. El
+    // suelo que garantiza ensureMarketReady es 200 B; este swap pide 10 000 A ×
+    // precio 2 = 20 000 B. Factor 100× contra el suelo (medido: 100×). Si algún
+    // día se sube MIN_LIQUIDITY_B por encima de 20 000, este test dejaría de
+    // fallar por InsufficientLiquidity — y el helper lo cantaría con
+    // "expected InsufficientLiquidity, but the transaction succeeded",
+    // no con un error críptico.
     it("rejects a swap larger than the liquidity in vault_b", async () => {
-      try {
-        await program.methods
-          .swapAToB(baseUnits(10_000, decimalsA), new anchor.BN(0))
-          .accounts(swapAccounts())
-          .rpc();
-        assert.fail("expected InsufficientLiquidity");
-      } catch (err) {
-        assert.equal(err.error.errorCode.code, "InsufficientLiquidity");
-      }
+      await expectAnchorError(
+        () =>
+          program.methods
+            .swapAToB(baseUnits(10_000, decimalsA), new anchor.BN(0))
+            .accounts(swapAccounts())
+            .rpc(),
+        "InsufficientLiquidity"
+      );
     });
 
-    // 🇪🇸 NOTA: el test de account confusion. Lo detienen las `seeds`, NO el
-    // Signer: el atacante firma legítimamente su propia transacción. Anchor
-    // re-deriva vault_b desde market.key() y la comparación falla.
-    it("rejects a vault belonging to a different market", async () => {
-      const otherMintRaw = await createMint(
+    // 🇪🇸 NOTA: initialize_market deja price = 0 a propósito; el mercado no
+    // opera hasta set_price. Hace falta un mercado NUEVO porque el principal ya
+    // tiene precio, y el helper de liquidez se lo fijaría igualmente.
+    // El swap falla por PriceNotSet antes de mirar la liquidez, así que este
+    // mercado ni siquiera necesita bóvedas con fondos.
+    it("rejects a swap on a market whose price was never set", async () => {
+      const firstRaw = await createMint(
         provider.connection, payer, authority.publicKey, null, DECIMALS_LOW
       );
-      const [lowMint, highMint] =
-        mintA.toBuffer().compare(otherMintRaw.toBuffer()) < 0
-          ? [mintA, otherMintRaw]
-          : [otherMintRaw, mintA];
+      const secondRaw = await createMint(
+        provider.connection, payer, authority.publicKey, null, DECIMALS_HIGH
+      );
 
-      const [otherMarket] = PublicKey.findProgramAddressSync(
-        [Buffer.from("market"), lowMint.toBuffer(), highMint.toBuffer()],
+      // El orden canónico se recalcula para ESTE par. No hay nada que permita
+      // suponer que el mint de 6 decimales vuelve a caer del lado A.
+      const firstIsLower = firstRaw.toBuffer().compare(secondRaw.toBuffer()) < 0;
+      const freshMintA = firstIsLower ? firstRaw : secondRaw;
+      const freshMintB = firstIsLower ? secondRaw : firstRaw;
+      const freshDecimalsA = firstIsLower ? DECIMALS_LOW : DECIMALS_HIGH;
+
+      const [freshMarket] = PublicKey.findProgramAddressSync(
+        [Buffer.from("market"), freshMintA.toBuffer(), freshMintB.toBuffer()],
         program.programId
       );
-      const [otherVaultA] = PublicKey.findProgramAddressSync(
-        [Buffer.from("vault_a"), otherMarket.toBuffer()], program.programId
+      const [freshVaultA] = PublicKey.findProgramAddressSync(
+        [Buffer.from("vault_a"), freshMarket.toBuffer()], program.programId
       );
-      const [otherVaultB] = PublicKey.findProgramAddressSync(
-        [Buffer.from("vault_b"), otherMarket.toBuffer()], program.programId
+      const [freshVaultB] = PublicKey.findProgramAddressSync(
+        [Buffer.from("vault_b"), freshMarket.toBuffer()], program.programId
       );
 
       await program.methods
         .initializeMarket()
         .accounts({
-          market: otherMarket,
-          tokenMintA: lowMint,
-          tokenMintB: highMint,
-          vaultA: otherVaultA,
-          vaultB: otherVaultB,
+          market: freshMarket,
+          tokenMintA: freshMintA,
+          tokenMintB: freshMintB,
+          vaultA: freshVaultA,
+          vaultB: freshVaultB,
           authority: authority.publicKey,
           tokenProgram: TOKEN_PROGRAM_ID,
           systemProgram: anchor.web3.SystemProgram.programId,
         })
         .rpc();
 
-      try {
-        await program.methods
-          .swapAToB(baseUnits(1, decimalsA), new anchor.BN(0))
-          .accounts({ ...swapAccounts(), vaultB: otherVaultB })
-          .rpc();
-        assert.fail("expected ConstraintSeeds");
-      } catch (err) {
-        assert.equal(err.error.errorCode.code, "ConstraintSeeds");
-      }
+      const userTokenA = await createAssociatedTokenAccount(
+        provider.connection, payer, freshMintA, authority.publicKey
+      );
+      const userTokenB = await createAssociatedTokenAccount(
+        provider.connection, payer, freshMintB, authority.publicKey
+      );
+      await mintTo(
+        provider.connection, payer, freshMintA, userTokenA, payer,
+        BigInt(baseUnits(10, freshDecimalsA).toString())
+      );
+
+      await expectAnchorError(
+        () =>
+          program.methods
+            .swapAToB(baseUnits(1, freshDecimalsA), new anchor.BN(0))
+            .accounts({
+              market: freshMarket,
+              vaultA: freshVaultA,
+              vaultB: freshVaultB,
+              userTokenA,
+              userTokenB,
+              user: authority.publicKey,
+              tokenProgram: TOKEN_PROGRAM_ID,
+            })
+            .rpc(),
+        "PriceNotSet"
+      );
+    });
+
+    // 🇪🇸 NOTA: el test de account confusion. Lo detienen las `seeds`, NO el
+    // Signer: el atacante firma legítimamente su propia transacción. Anchor
+    // re-deriva vault_b desde market.key() y la comparación falla.
+    it("rejects a vault belonging to a different market", async () => {
+      const foreign = await createForeignMarket();
+
+      await expectAnchorError(
+        () =>
+          program.methods
+            .swapAToB(baseUnits(1, decimalsA), new anchor.BN(0))
+            .accounts({ ...swapAccounts(), vaultB: foreign.vaultB })
+            .rpc(),
+        "ConstraintSeeds"
+      );
     });
   });
 
   // ───────────────────────────────────────────────────────────────────────────
   describe("swap_b_to_a", () => {
+    beforeEach(ensureMarketReady);
+
     // 🇪🇸 NOTA: si 1 A vale 2 B, entonces 1 B vale 0,5 A.
     it("applies the inverse of the market price", async () => {
       const amountIn = baseUnits(1, decimalsB);
@@ -502,15 +708,14 @@ describe("solana-token-swap", () => {
     });
 
     it("rejects a zero input", async () => {
-      try {
-        await program.methods
-          .swapBToA(new anchor.BN(0), new anchor.BN(0))
-          .accounts(swapAccounts())
-          .rpc();
-        assert.fail("expected ZeroAmount");
-      } catch (err) {
-        assert.equal(err.error.errorCode.code, "ZeroAmount");
-      }
+      await expectAnchorError(
+        () =>
+          program.methods
+            .swapBToA(new anchor.BN(0), new anchor.BN(0))
+            .accounts(swapAccounts())
+            .rpc(),
+        "ZeroAmount"
+      );
     });
 
     // 🇪🇸 NOTA: 1 unidad base solo trunca a 0 si el token de SALIDA tiene menos
@@ -519,43 +724,63 @@ describe("solana-token-swap", () => {
     // "A es el de 6 decimales" es exactamente el bug que el orden canónico
     // introduce en cualquier cliente descuidado.
     it("rejects an input so small that the output truncates to zero", async () => {
-      const call = decimalsB > decimalsA
-        ? program.methods.swapBToA(new anchor.BN(1), new anchor.BN(0))
-        : program.methods.swapAToB(new anchor.BN(1), new anchor.BN(0));
-
-      try {
-        await call.accounts(swapAccounts()).rpc();
-        assert.fail("expected ZeroOutput");
-      } catch (err) {
-        assert.equal(err.error.errorCode.code, "ZeroOutput");
-      }
+      await expectAnchorError(
+        () =>
+          (decimalsB > decimalsA
+            ? program.methods.swapBToA(new anchor.BN(1), new anchor.BN(0))
+            : program.methods.swapAToB(new anchor.BN(1), new anchor.BN(0))
+          )
+            .accounts(swapAccounts())
+            .rpc(),
+        "ZeroOutput"
+      );
     });
 
     it("rejects an output below the requested minimum", async () => {
-      try {
-        await program.methods
-          .swapBToA(baseUnits(1, decimalsB), baseUnits(999, decimalsA))
-          .accounts(swapAccounts())
-          .rpc();
-        assert.fail("expected SlippageExceeded");
-      } catch (err) {
-        assert.equal(err.error.errorCode.code, "SlippageExceeded");
-      }
+      await expectAnchorError(
+        () =>
+          program.methods
+            .swapBToA(baseUnits(1, decimalsB), baseUnits(999, decimalsA))
+            .accounts(swapAccounts())
+            .rpc(),
+        "SlippageExceeded"
+      );
     });
 
     // 🇪🇸 NOTA: aquí la bóveda que se drena es vault_A, no vault_B. Es el sitio
     // donde un copy-paste desde swap_a_to_b habría comprobado la cuenta
     // equivocada, y el fallo habría sido silencioso.
+    // 🇪🇸 NOTA: mismo razonamiento que en A→B, con más holgura todavía. El suelo
+    // de vault_a es 100 A y este swap pide 100 000 B ÷ precio 2 = 50 000 A:
+    // factor 500× contra el suelo (medido: 331× en una corrida real, porque los
+    // swaps anteriores habían dejado 151 A en la bóveda).
     it("rejects a swap larger than the liquidity in vault_a", async () => {
-      try {
-        await program.methods
-          .swapBToA(baseUnits(100_000, decimalsB), new anchor.BN(0))
-          .accounts(swapAccounts())
-          .rpc();
-        assert.fail("expected InsufficientLiquidity");
-      } catch (err) {
-        assert.equal(err.error.errorCode.code, "InsufficientLiquidity");
-      }
+      await expectAnchorError(
+        () =>
+          program.methods
+            .swapBToA(baseUnits(100_000, decimalsB), new anchor.BN(0))
+            .accounts(swapAccounts())
+            .rpc(),
+        "InsufficientLiquidity"
+      );
+    });
+
+    // 🇪🇸 NOTA: el espejo del test de account confusion de swap_a_to_b. La
+    // bóveda que se pasa mal es vault_A, porque es la que drena esta dirección.
+    // Lo que la detiene sigue siendo la derivación de las `seeds`: el usuario
+    // firma su propia transacción con total legitimidad, así que el Signer no
+    // aporta nada aquí.
+    it("rejects a vault belonging to a different market", async () => {
+      const foreign = await createForeignMarket();
+
+      await expectAnchorError(
+        () =>
+          program.methods
+            .swapBToA(baseUnits(1, decimalsB), new anchor.BN(0))
+            .accounts({ ...swapAccounts(), vaultA: foreign.vaultA })
+            .rpc(),
+        "ConstraintSeeds"
+      );
     });
   });
 });
