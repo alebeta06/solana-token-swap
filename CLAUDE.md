@@ -4,7 +4,7 @@ Proyecto del Máster CodeCrypto (Blockchain Engineering & AI), Módulo 15 — To
 Swap de tokens SPL con precio fijo, en Anchor. **Primera experiencia del autor con
 Solana y Rust** — explicar antes de implementar, comparando siempre con Solidity/EVM.
 
-> ⚠️ **Estado actual: Fases 0–4 completadas. La siguiente es la Fase 5.**
+> ⚠️ **Estado actual: Fases 0–5 completadas. La siguiente es la Fase 6.**
 > Son 11 fases (0 a 10). Ver "Estado del programa" más abajo.
 
 ---
@@ -273,7 +273,7 @@ En el denominador de A→B hay dos factores que **por casualidad pueden valer lo
 
 ## Estado del programa
 
-**Fases 0–4 completadas** ✅ — programa completo con **25 tests en verde**.
+**Fases 0–5 completadas** ✅ — programa completo con **27 tests en verde**.
 
 ```
 initialize_market (5)
@@ -291,14 +291,15 @@ add_liquidity (4)
   ✔ accepts a deposit of only one side
   ✔ rejects a deposit where both amounts are zero
   ✔ rejects a token account whose mint does not match the market
-swap_a_to_b (6)
+swap_a_to_b (7)
   ✔ converts at the market price, honouring both token scales
   ✔ moves the input tokens into vault_a
   ✔ rejects a zero input
   ✔ rejects an output below the requested minimum
   ✔ rejects a swap larger than the liquidity in vault_b
+  ✔ rejects a swap on a market whose price was never set     ← Fase 5
   ✔ rejects a vault belonging to a different market
-swap_b_to_a (7)
+swap_b_to_a (8)
   ✔ applies the inverse of the market price
   ✔ moves the input tokens into vault_b
   ✔ never returns more than went in on a round trip A→B→A
@@ -306,24 +307,39 @@ swap_b_to_a (7)
   ✔ rejects an input so small that the output truncates to zero
   ✔ rejects an output below the requested minimum
   ✔ rejects a swap larger than the liquidity in vault_a
+  ✔ rejects a vault belonging to a different market           ← Fase 5
 ```
 
-**Todos los errores de `SwapError` están en uso.**
+**Todos los errores de `SwapError` están en uso**, `PriceNotSet` incluido desde la
+Fase 5.
 
 **Rúbrica cubierta:** mercado+liquidez con PDAs (30%) ✅ · swap A→B (20%) ✅ ·
 swap B→A (30%) ✅ · tests (parte del 20%) ✅ · documentación ⬜
 
-### Siguiente: Fase 5 — endurecer la suite
+### Lo que resolvió la Fase 5
 
-- ⚠️ **Los tests comparten estado en el ledger y el orden importa.** `set_price` debe
-  correr antes que `add_liquidity`, y los swaps dependen de la liquidez que dejaron los
-  anteriores. Hacerlos independientes o documentar la dependencia.
-- ⚠️ **Los `catch` asumen la forma del error.** Si la transacción no falla, el
-  `assert.fail` lanza un error que no es de Anchor y el mensaje resultante
-  (`Cannot read properties of undefined`) oculta la causa real. Hace falta un helper
-  que distinga "no falló" de "falló con otro código".
-- Falta test de `PriceNotSet` (swap sobre un mercado recién creado, sin precio).
-- Falta test de account confusion en `swap_b_to_a` (solo está en `swap_a_to_b`).
+- **`expectAnchorError()` sustituye los 11 `try/catch`.** Ver "Convenciones".
+- **`ensureMarketReady()` en un `beforeEach` de los dos describes de swap.** Es
+  idempotente: fija el precio si está a cero y rellena **solo el déficit** de cada
+  bóveda hasta el mínimo (100 A / 200 B), acuñando antes lo que falte en la ATA del
+  depositante. Verificado con ledger limpio ejecutando **solo** los swaps
+  (`-g "swap_"`): **15 passing** sin que corrieran `set_price` ni `add_liquidity`.
+- **`add_liquidity › moves tokens…` pasó de saldo absoluto a delta**, que es lo que
+  promete su nombre y no exige encontrar las bóvedas vacías.
+- **Margen de los tests de liquidez medido, no supuesto:** 100× en A→B (suelo 200 B
+  contra 20 000 B pedidos) y 500× en B→A contra el suelo (medido 331× en una corrida
+  real, porque los swaps previos habían dejado 151 A). Documentado en el propio test.
+
+### Dependencia de orden que queda (deliberada)
+
+`initialize_market › starts with price unset` mira el mercado principal recién creado,
+así que **tiene que correr antes que `set_price`**. Quitarla significaría perder lo que
+el test afirma: que `initialize_market` NO deja el mercado operativo. Mocha respeta el
+orden de declaración; el test lo dice en un comentario.
+
+### Siguiente: Fase 6 — documentación
+
+Es lo único pendiente de la rúbrica. Ver las 11 fases (0–10) para el resto.
 
 ---
 
@@ -335,6 +351,18 @@ swap B→A (30%) ✅ · tests (parte del 20%) ✅ · documentación ⬜
   test. Ej: `"reads decimals from the mints instead of trusting the caller"`
 - Los `describe` van todos al mismo nivel dentro del `describe` raíz, nunca anidados
   dentro del `before()`
+- **Nunca `try/catch` en un test: usar `expectAnchorError(() => …rpc(), "CodigoEsperado")`.**
+  El patrón `try { …; assert.fail() } catch (err) { err.error.errorCode.code }` tiene un
+  bug propio: cuando la transacción **no** falla, el `assert.fail` está DENTRO del `try`,
+  así que su `AssertionError` lo recoge el `catch` de al lado, y ahí `err.error` es
+  `undefined`. Lo que ves es `Cannot read properties of undefined (reading 'errorCode')`
+  — un mensaje que describe el bug del test y oculta el del programa. Ya pasó dos veces.
+  El helper captura el error en una variable y sale del `try` antes de decidir nada,
+  distinguiendo los tres casos:
+  `"expected X, but the transaction succeeded"` · `"expected X, got Y"` ·
+  el error crudo con su `stack` si no es de Anchor.
+  Recibe un *thunk* (`() => …rpc()`), no una promesa ya lanzada, para que también capture
+  lo que el cliente tire de forma síncrona antes de enviar la transacción.
 - Rama única `main`
 
 ---
