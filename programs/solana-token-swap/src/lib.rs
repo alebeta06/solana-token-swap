@@ -176,6 +176,86 @@ pub mod solana_token_swap {
 
         Ok(())
     }
+    /// Swaps token B for token A at the market's fixed price.
+    ///
+    /// 🇪🇸 NOTA: es el espejo de swap_a_to_b, pero NO es copiar y pegar:
+    ///   · la bóveda que se drena es vault_a, no vault_b
+    ///   · el precio DIVIDE en vez de multiplicar, así que price = 0 es fatal
+    ///   · la entrada va a vault_b y la salida sale de vault_a
+    pub fn swap_b_to_a(ctx: Context<SwapBToA>, amount_in: u64, min_amount_out: u64) -> Result<()> {
+        let market = &ctx.accounts.market;
+
+        require!(amount_in > 0, SwapError::ZeroAmount);
+
+        // 🇪🇸 NOTA: aquí `price` está en el DENOMINADOR. Sin este check,
+        // checked_div devolvería None y saldría un MathOverflow engañoso:
+        // el problema no es un desbordamiento, es un mercado sin precio.
+        require!(market.price > 0, SwapError::PriceNotSet);
+
+        let amount_out = amount_b_to_a(
+            amount_in,
+            market.price,
+            market.decimals_a,
+            market.decimals_b,
+        )?;
+
+        require!(amount_out > 0, SwapError::ZeroOutput);
+
+        // 🇪🇸 NOTA: vault_A, no vault_B. Es el sitio más fácil para copiar mal
+        // desde swap_a_to_b, y el fallo sería silencioso: comprobarías liquidez
+        // de una bóveda y sacarías de la otra.
+        require!(
+            ctx.accounts.vault_a.amount >= amount_out,
+            SwapError::InsufficientLiquidity
+        );
+
+        require!(amount_out >= min_amount_out, SwapError::SlippageExceeded);
+
+        // ── Entrada: usuario → vault_b. Firma el usuario. ──────────────────
+        let cpi_in = CpiContext::new(
+            ctx.accounts.token_program.key(),
+            Transfer {
+                from: ctx.accounts.user_token_b.to_account_info(),
+                to: ctx.accounts.vault_b.to_account_info(),
+                authority: ctx.accounts.user.to_account_info(),
+            },
+        );
+        token::transfer(cpi_in, amount_in)?;
+
+        // ── Salida: vault_a → usuario. Firma el PDA del mercado. ───────────
+        // 🇪🇸 NOTA: las seeds son IDÉNTICAS a las de swap_a_to_b. Derivan el
+        // mercado, no la bóveda. Lo que cambia es de qué cuenta sale el token.
+        let mint_a_key = market.token_mint_a;
+        let mint_b_key = market.token_mint_b;
+        let seeds: &[&[u8]] = &[
+            b"market",
+            mint_a_key.as_ref(),
+            mint_b_key.as_ref(),
+            &[market.bump],
+        ];
+        let signer_seeds = &[seeds];
+
+        let cpi_out = CpiContext::new_with_signer(
+            ctx.accounts.token_program.key(),
+            Transfer {
+                from: ctx.accounts.vault_a.to_account_info(),
+                to: ctx.accounts.user_token_a.to_account_info(),
+                authority: ctx.accounts.market.to_account_info(),
+            },
+            signer_seeds,
+        );
+        token::transfer(cpi_out, amount_out)?;
+
+        emit!(SwapExecuted {
+            market: market.key(),
+            user: ctx.accounts.user.key(),
+            a_to_b: false,
+            amount_in,
+            amount_out,
+        });
+
+        Ok(())
+    }
 }
 
 /// Converts an input amount of token A into the corresponding amount of token B.
@@ -210,6 +290,41 @@ pub fn amount_a_to_b(amount_a: u64, price: u64, decimals_a: u8, decimals_b: u8) 
         .ok_or(SwapError::MathOverflow)?;
 
     u64::try_from(amount_b).map_err(|_| SwapError::MathOverflow.into())
+}
+
+/// Converts an input amount of token B into the corresponding amount of token A.
+///
+/// 🇪🇸 NOTA: es la inversa de `amount_a_to_b`. Lo que allí multiplicaba, aquí
+/// divide, y viceversa:
+///   A→B:  (amount × price   × 10^dec_b) / (10^PRICE_DECIMALS × 10^dec_a)
+///   B→A:  (amount × 10^PRICE_DECIMALS × 10^dec_a) / (price × 10^dec_b)
+///
+/// ⚠️ El README oficial propone `(amount * 10^6) / (price * 10^dec_a / 10^dec_b)`.
+/// Esa división anidada se evalúa primero y, con dec_b > dec_a, el denominador
+/// interno trunca a 0 → pánico por división por cero. Aquí no hay ninguna
+/// división hasta el final.
+///
+/// ⚠️ `price` aparece en el DENOMINADOR. El caller debe garantizar que no es
+/// cero antes de llamar; el `checked_div` es la red de seguridad, no la defensa.
+pub fn amount_b_to_a(amount_b: u64, price: u64, decimals_a: u8, decimals_b: u8) -> Result<u64> {
+    let numerator = (amount_b as u128)
+        .checked_mul(10u128.pow(PRICE_DECIMALS))
+        .ok_or(SwapError::MathOverflow)?
+        .checked_mul(10u128.pow(decimals_a as u32))
+        .ok_or(SwapError::MathOverflow)?;
+
+    let denominator = (price as u128)
+        .checked_mul(10u128.pow(decimals_b as u32))
+        .ok_or(SwapError::MathOverflow)?;
+
+    // 🇪🇸 NOTA: la división entera trunca hacia abajo, igual que en A→B. Como
+    // truncar solo puede REDUCIR la salida, ambas direcciones favorecen al pool.
+    // De ahí que la invariante A→B→A ≤ entrada esté garantizada, no sea suerte.
+    let amount_a = numerator
+        .checked_div(denominator)
+        .ok_or(SwapError::MathOverflow)?;
+
+    u64::try_from(amount_a).map_err(|_| SwapError::MathOverflow.into())
 }
 
 /// Market state. One account per token pair, addressed by a PDA.
@@ -391,6 +506,48 @@ pub struct SwapAToB<'info> {
     /// re-deriva la dirección desde market.key() y la compara. Pasar la bóveda
     /// de otro mercado aborta la instrucción. NO es el Signer quien lo detiene:
     /// el atacante firma legítimamente su propia transacción.
+    #[account(
+        mut,
+        seeds = [b"vault_a", market.key().as_ref()],
+        bump = market.vault_a_bump,
+    )]
+    pub vault_a: Account<'info, TokenAccount>,
+
+    #[account(
+        mut,
+        seeds = [b"vault_b", market.key().as_ref()],
+        bump = market.vault_b_bump,
+    )]
+    pub vault_b: Account<'info, TokenAccount>,
+
+    #[account(
+        mut,
+        constraint = user_token_a.mint == market.token_mint_a @ SwapError::InvalidMint,
+    )]
+    pub user_token_a: Account<'info, TokenAccount>,
+
+    #[account(
+        mut,
+        constraint = user_token_b.mint == market.token_mint_b @ SwapError::InvalidMint,
+    )]
+    pub user_token_b: Account<'info, TokenAccount>,
+
+    pub user: Signer<'info>,
+
+    pub token_program: Program<'info, Token>,
+}
+
+/// 🇪🇸 NOTA: las cuentas son las mismas que en SwapAToB. Podría reutilizarse
+/// el mismo struct, pero tener uno por instrucción deja el IDL explícito y
+/// permite añadir constraints específicas si alguna dirección las necesitara.
+#[derive(Accounts)]
+pub struct SwapBToA<'info> {
+    #[account(
+        seeds = [b"market", market.token_mint_a.as_ref(), market.token_mint_b.as_ref()],
+        bump = market.bump,
+    )]
+    pub market: Account<'info, MarketAccount>,
+
     #[account(
         mut,
         seeds = [b"vault_a", market.key().as_ref()],
