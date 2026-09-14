@@ -5,7 +5,7 @@ Swap de tokens SPL con precio fijo, en Anchor. **Primera experiencia del autor c
 Solana y Rust** — explicar antes de implementar, comparando siempre con Solidity/EVM.
 
 > ⚠️ **Estado actual: Fases 0–5 completadas. La siguiente es la Fase 6.**
-> Son 11 fases (0 a 10). Ver "Estado del programa" más abajo.
+> Son 11 fases (0 a 10). Ver "Plan completo — las 11 fases" y "Estado del programa".
 
 ---
 
@@ -314,7 +314,7 @@ swap_b_to_a (8)
 Fase 5.
 
 **Rúbrica cubierta:** mercado+liquidez con PDAs (30%) ✅ · swap A→B (20%) ✅ ·
-swap B→A (30%) ✅ · tests (parte del 20%) ✅ · documentación ⬜
+swap B→A (30%) ✅ · tests (parte del 20%) ✅ · documentación ⬜ (fase 9)
 
 ### Lo que resolvió la Fase 5
 
@@ -337,9 +337,29 @@ así que **tiene que correr antes que `set_price`**. Quitarla significaría perd
 el test afirma: que `initialize_market` NO deja el mercado operativo. Mocha respeta el
 orden de declaración; el test lo dice en un comentario.
 
-### Siguiente: Fase 6 — documentación
+### Siguiente: Fase 6 — deploy en devnet
 
-Es lo único pendiente de la rúbrica. Ver las 11 fases (0–10) para el resto.
+Deploy del programa en devnet, creación de las mints propias del proyecto y script de
+seed. La documentación **no** es la fase 6: el README y los diagramas van en la fase 9,
+junto con el deploy a Vercel.
+
+---
+
+## Plan completo — las 11 fases
+
+| Fase | Contenido                                        | Estado |
+| ---- | ------------------------------------------------ | ------ |
+| 0    | Scaffold, toolchain, program ID                  | ✅     |
+| 1    | `MarketAccount` + `initialize_market`            | ✅     |
+| 2    | `set_price` + `add_liquidity`                    | ✅     |
+| 3    | `swap_a_to_b` + aritmética `u128`                | ✅     |
+| 4    | `swap_b_to_a` + invariante A→B→A                 | ✅     |
+| 5    | Endurecer la suite                               | ✅     |
+| 6    | Deploy devnet + mints propias + script de seed   | ⬅️ siguiente |
+| 7    | Frontend Next.js                                 | ⬜     |
+| 8    | Faucet + mercado EURC/USDC                       | ⬜     |
+| 9    | Vercel + README + diagramas                      | ⬜     |
+| 10   | Video + entrega GitHub/GitLab                    | ⬜     |
 
 ---
 
