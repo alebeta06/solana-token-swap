@@ -1,0 +1,22 @@
+{
+  "cluster": "devnet",
+  "programId": "BJ7GHy1zRe1VKuKUZU2ac2q1VQmtukmHzCpbo98m21qp",
+  "authority": "9aaPGTS7DikpFQugaPZVzVTaQ7dagUk1GpUwBDo15Y4y",
+  "mints": {
+    "DEMO6": {
+      "address": "EUbsGAeLh2d2qeptdgfsP6sanVzPZMTXN9P4e8sn4acR",
+      "decimals": 6
+    },
+    "DEMO9": {
+      "address": "BzrxQu3xBu9kppHCHVUFBfRCHdu4hfVji9K5Xyj8VLRF",
+      "decimals": 9
+    }
+  },
+  "market": {
+    "mintA": "BzrxQu3xBu9kppHCHVUFBfRCHdu4hfVji9K5Xyj8VLRF",
+    "mintB": "EUbsGAeLh2d2qeptdgfsP6sanVzPZMTXN9P4e8sn4acR",
+    "mintAIs": "DEMO9",
+    "mintBIs": "DEMO6"
+  },
+  "createdAt": "2026-09-15T22:28:56.157Z"
+}
