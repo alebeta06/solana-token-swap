@@ -4,7 +4,7 @@ Proyecto del Máster CodeCrypto (Blockchain Engineering & AI), Módulo 15 — To
 Swap de tokens SPL con precio fijo, en Anchor. **Primera experiencia del autor con
 Solana y Rust** — explicar antes de implementar, comparando siempre con Solidity/EVM.
 
-> ⚠️ **Estado actual: Fases 0–5 completadas. La siguiente es la Fase 6.**
+> ⚠️ **Estado actual: Fases 0–6 completadas. La siguiente es la Fase 7.**
 > Son 11 fases (0 a 10). Ver "Plan completo — las 11 fases" y "Estado del programa".
 
 ---
@@ -386,11 +386,29 @@ junto con el deploy a Vercel.
 | 3    | `swap_a_to_b` + aritmética `u128`                | ✅     |
 | 4    | `swap_b_to_a` + invariante A→B→A                 | ✅     |
 | 5    | Endurecer la suite                               | ✅     |
-| 6    | Deploy devnet + mints propias + script de seed   | ⬅️ siguiente |
-| 7    | Frontend Next.js                                 | ⬜     |
+| 6    | Deploy devnet + mints propias + script de seed   | ✅     |
+| 7    | Frontend Next.js                                 | ⬅️ siguiente |
 | 8    | Faucet + mercado EURC/USDC                       | ⬜     |
-| 9    | Vercel + README + diagramas                      | ⬜     |
+| 9    | Vercel + README + diagramas + **verified build** | ⬜     |
 | 10   | Video + entrega GitHub/GitLab                    | ⬜     |
+
+### El verified build de la Fase 9
+
+Un **verified build** permite a cualquiera reproducir el binario desde el código fuente y
+comprobar que coincide con el que está desplegado on-chain. Sin él, "está desplegado" solo
+significa que hay un binario en esa dirección — nadie puede saber si corresponde a este
+repositorio.
+
+**Por qué va en la Fase 9 y no antes:** se rompe con cada redespliegue, porque verifica un
+binario concreto contra un commit concreto. Su producto es un badge y un enlace que van al
+README. Hacerlo antes de cerrar frontend (Fase 7) y faucet (Fase 8) sería trabajo repetido.
+
+⚠️ **El proceso hay que investigarlo cuando toque.** Existe la herramienta `solana-verify`
+y un registro público, pero **el flujo exacto no está verificado en este proyecto**.
+**Primera acción de esa tarea: consultar el MCP oficial de Solana**
+(`Solana_Documentation_Search` / `Solana_Expert__Ask_For_Help`). Contar también con que
+normalmente exige un **build reproducible dentro de Docker**, lo que aquí puede no ser
+trivial dado el historial de incompatibilidades de toolchain (ver "Entorno").
 
 ---
 
