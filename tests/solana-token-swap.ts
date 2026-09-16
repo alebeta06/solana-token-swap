@@ -92,7 +92,12 @@ describe("solana-token-swap", () => {
 
   // 🇪🇸 NOTA: las dos instrucciones de swap comparten el mismo juego de cuentas.
   // Lo que cambia entre ellas es la aritmética, no el contexto.
-  const swapAccounts = () => ({
+  //
+  // ⚠️ El parámetro de overrides no es cosmético. `{ ...swapAccounts(), vaultB: x }`
+  // sigue siendo un literal para TypeScript, que comprueba sus claves contra un
+  // tipo del que Anchor ya ha borrado `market` y las bóvedas. Pasar el objeto ya
+  // construido evita la comprobación sin necesidad de un `any` por sitio.
+  const swapAccounts = (overrides: Record<string, PublicKey> = {}) => ({
     market: marketPda,
     vaultA: vaultAPda,
     vaultB: vaultBPda,
@@ -100,6 +105,7 @@ describe("solana-token-swap", () => {
     userTokenB: authorityTokenB,
     user: authority.publicKey,
     tokenProgram: TOKEN_PROGRAM_ID,
+    ...overrides,
   });
 
   const liquidityAccounts = (tokenA: PublicKey = authorityTokenA) => ({
@@ -570,19 +576,23 @@ describe("solana-token-swap", () => {
         BigInt(baseUnits(10, freshDecimalsA).toString())
       );
 
+      // 🇪🇸 NOTA: el `any` es obligatorio y el cast en línea `{...} as any` NO
+      // sirve — TypeScript valida el literal antes de aplicar el cast.
+      const freshSwapAccounts: any = {
+        market: freshMarket,
+        vaultA: freshVaultA,
+        vaultB: freshVaultB,
+        userTokenA,
+        userTokenB,
+        user: authority.publicKey,
+        tokenProgram: TOKEN_PROGRAM_ID,
+      };
+
       await expectAnchorError(
         () =>
           program.methods
             .swapAToB(baseUnits(1, freshDecimalsA), new anchor.BN(0))
-            .accounts({
-              market: freshMarket,
-              vaultA: freshVaultA,
-              vaultB: freshVaultB,
-              userTokenA,
-              userTokenB,
-              user: authority.publicKey,
-              tokenProgram: TOKEN_PROGRAM_ID,
-            })
+            .accounts(freshSwapAccounts)
             .rpc(),
         "PriceNotSet"
       );
@@ -598,7 +608,7 @@ describe("solana-token-swap", () => {
         () =>
           program.methods
             .swapAToB(baseUnits(1, decimalsA), new anchor.BN(0))
-            .accounts({ ...swapAccounts(), vaultB: foreign.vaultB })
+            .accounts(swapAccounts({ vaultB: foreign.vaultB }))
             .rpc(),
         "ConstraintSeeds"
       );
@@ -749,7 +759,7 @@ describe("solana-token-swap", () => {
         () =>
           program.methods
             .swapBToA(baseUnits(1, decimalsB), new anchor.BN(0))
-            .accounts({ ...swapAccounts(), vaultA: foreign.vaultA })
+            .accounts(swapAccounts({ vaultA: foreign.vaultA }))
             .rpc(),
         "ConstraintSeeds"
       );
