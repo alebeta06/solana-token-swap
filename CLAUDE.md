@@ -180,6 +180,37 @@ El material del curso (videos) es **anterior a Anchor 0.31**; el proyecto va en
 - Copiar las `Pubkey` de los mints a variables locales antes de `as_ref()` evita
   conflictos con el borrow checker al usar `ctx.accounts.market` después
 
+**Verificado en Fase 6:**
+
+- ⚠️ **El tipo `.accounts()` de Anchor 1.2.0 no es una autoridad sobre qué cuentas
+  hacen falta.** En `node_modules/@anchor-lang/core/.../namespace/methods.d.ts`, el
+  helper `ResolvedAccount` manda a `never` toda cuenta que en el IDL lleve `pda`,
+  `address` o `relations`, **sin mirar si el resolver en runtime puede derivarla**.
+  De ahí el desajuste con los self-referencing PDAs.
+- ⚠️ **Y en `set_price` ese desajuste estaba silenciado por accidente.** Sus dos
+  cuentas caen en `never` (`market` por `pda`, `authority` por `relations`), el tipo
+  resultante es `{}`, y **TypeScript no aplica excess property check contra el tipo
+  vacío**: `.accounts({ market, authority })` compilaba por no tener nada contra lo
+  que comparar, no por ser correcto. Los mismos campos en los swaps —donde el tipo
+  no queda vacío— sí daban `TS2353`. **Que un `.accounts()` compile no dice nada
+  sobre si el juego de cuentas es el que el programa espera.**
+- **`initialize_market` no necesita `any`.** Sus seeds salen de `token_mint_a` /
+  `token_mint_b`, que son cuentas que le pasamos, así que Anchor resuelve `market`,
+  las dos bóvedas y los dos programas. Basta `{ tokenMintA, tokenMintB, authority }`.
+  El `any` solo hace falta donde `market` es self-referencing (`set_price`,
+  `add_liquidity`, los dos swaps).
+- **`{ ...helper(), clave: x }` sigue siendo un literal** para TypeScript, que
+  comprueba sus claves aunque el spread venga de una variable tipada. Un helper con
+  parámetro de overrides (`swapAccounts({ vaultB: x })`) evita el `any`; el spread
+  en el sitio de llamada, no.
+- **`target`/`lib` en `es2020`**, el mínimo que legaliza los literales `BigInt`
+  (`0n`). **No subir a `es2022` sin decidirlo aparte:** a partir de ahí
+  `useDefineForClassFields` pasa a `true` por defecto y cambia la semántica de los
+  campos de clase.
+- `migrations/deploy.ts` **borrado**. Era scaffold de Anchor que nunca se completó,
+  importaba `@coral-xyz/anchor` y solo lo consumiría `anchor migrate`, que no usamos:
+  se despliega con `anchor deploy` y se siembra con `scripts/seed-market.ts`.
+
 **Cambios de 1.0+ ya aplicados:**
 
 - Paquete TypeScript: `@coral-xyz/anchor` → **`@anchor-lang/core`**
