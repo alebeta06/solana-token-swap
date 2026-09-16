@@ -189,14 +189,9 @@ describe("solana-token-swap", () => {
     await program.methods
       .initializeMarket()
       .accounts({
-        market,
         tokenMintA: lowMint,
         tokenMintB: highMint,
-        vaultA: foreignVaultA,
-        vaultB: foreignVaultB,
         authority: authority.publicKey,
-        tokenProgram: TOKEN_PROGRAM_ID,
-        systemProgram: anchor.web3.SystemProgram.programId,
       })
       .rpc();
 
@@ -257,14 +252,9 @@ describe("solana-token-swap", () => {
     await program.methods
       .initializeMarket()
       .accounts({
-        market: marketPda,
         tokenMintA: mintA,
         tokenMintB: mintB,
-        vaultA: vaultAPda,
-        vaultB: vaultBPda,
         authority: authority.publicKey,
-        tokenProgram: TOKEN_PROGRAM_ID,
-        systemProgram: anchor.web3.SystemProgram.programId,
       })
       .rpc();
   });
@@ -305,30 +295,17 @@ describe("solana-token-swap", () => {
     });
 
     it("rejects mints passed in non-canonical order", async () => {
-      const [reversedMarket] = PublicKey.findProgramAddressSync(
-        [Buffer.from("market"), mintB.toBuffer(), mintA.toBuffer()],
-        program.programId
-      );
-      const [reversedVaultA] = PublicKey.findProgramAddressSync(
-        [Buffer.from("vault_a"), reversedMarket.toBuffer()], program.programId
-      );
-      const [reversedVaultB] = PublicKey.findProgramAddressSync(
-        [Buffer.from("vault_b"), reversedMarket.toBuffer()], program.programId
-      );
-
+      // 🇪🇸 NOTA: basta con pasar los mints al revés. Anchor deriva el PDA del
+      // mercado de los mints que le damos, así que el contexto es coherente y
+      // lo único que falla es la constraint del programa.
       await expectAnchorError(
         () =>
           program.methods
             .initializeMarket()
             .accounts({
-              market: reversedMarket,
               tokenMintA: mintB,
               tokenMintB: mintA,
-              vaultA: reversedVaultA,
-              vaultB: reversedVaultB,
               authority: authority.publicKey,
-              tokenProgram: TOKEN_PROGRAM_ID,
-              systemProgram: anchor.web3.SystemProgram.programId,
             })
             .rpc(),
         "MintOrder"
@@ -576,14 +553,9 @@ describe("solana-token-swap", () => {
       await program.methods
         .initializeMarket()
         .accounts({
-          market: freshMarket,
           tokenMintA: freshMintA,
           tokenMintB: freshMintB,
-          vaultA: freshVaultA,
-          vaultB: freshVaultB,
           authority: authority.publicKey,
-          tokenProgram: TOKEN_PROGRAM_ID,
-          systemProgram: anchor.web3.SystemProgram.programId,
         })
         .rpc();
 
