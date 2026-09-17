@@ -149,6 +149,30 @@ account confusion), `gh-anchor-amm-2023` (AMM de producto constante),
 
 ---
 
+## MCP del Solana Explorer (alta en Fase 7)
+
+`solana-explorer` → `https://explorer.solana.com/mcp`, scope local, sin API key.
+Streamable HTTP y **stateless** (no devuelve `mcp-session-id`). Dos tools de **solo
+lectura** — `inspect_entity` y `ping` —; no puede firmar ni alterar estado on-chain.
+
+**Regla:** ante cualquier dirección, firma, programa, mint o wallet de Solana, llamar a
+`inspect_entity` en vez de tirar de la memoria del modelo. Devuelve el registro
+decodificado por IDL, el mismo que muestra el Explorer web: para mints SPL
+supply/decimals/mint authority/freeze authority; para programas ownership y metadata;
+para transacciones sus instrucciones y resultados en secuencia. Los fallos vienen en
+`errors[]`: `NOT_FOUND` y `CURRENTLY_UNSUPPORTED`.
+
+⚠️ **Cubre `mainnet-beta`, `devnet` y `testnet` — y nada más.** No alcanza
+`solana-test-validator` ni LiteSVM, así que **durante los tests locales no sirve**: ahí
+la fuente es el validador y el propio `anchor test`. Aplica **sobre lo desplegado en
+devnet** — el criterio es el cluster, no la fase.
+
+**No confundir los dos MCPs de Solana:** `mcp.solana.com` responde *cómo se construye*
+(documentación + `program_autofixer`); `explorer.solana.com/mcp` responde *qué existe
+on-chain ahora mismo*.
+
+---
+
 ## Deriva de versión — regla operativa
 
 El material del curso (videos) es **anterior a Anchor 0.31**; el proyecto va en
