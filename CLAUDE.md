@@ -4,7 +4,7 @@ Proyecto del Máster CodeCrypto (Blockchain Engineering & AI), Módulo 15 — To
 Swap de tokens SPL con precio fijo, en Anchor. **Primera experiencia del autor con
 Solana y Rust** — explicar antes de implementar, comparando siempre con Solidity/EVM.
 
-> ⚠️ **Estado actual: Fases 0–6 completadas. La siguiente es la Fase 7.**
+> ⚠️ **Estado actual: Fases 0–7 completadas. La siguiente es la Fase 8.**
 > Son 11 fases (0 a 10). Ver "Plan completo — las 11 fases" y "Estado del programa".
 
 ---
@@ -304,7 +304,23 @@ En el denominador de A→B hay dos factores que **por casualidad pueden valer lo
 
 ## Estado del programa
 
-**Fases 0–5 completadas** ✅ — programa completo con **27 tests en verde**.
+**Fases 0–7 completadas** ✅ — programa con **27 tests en verde**, desplegado en
+devnet, y **frontend funcionando con el swap verificado on-chain**.
+
+### El frontend (Fase 7)
+
+Next.js 15 en `frontend/`, con **31 tests de vitest** sobre los tres módulos puros
+(`units`, `market`, `quote`) y `typecheck` + `build` en verde.
+
+**Swap real desde el navegador, con Solflare contra devnet:** 1 DEMO9 → 2 DEMO6.
+Firma
+`24V6rz2WHL3FZsbzrGrUBU3RJEeGYmKZdgUjjw4C3cpqCQDxdZyghgQbHNb3ze4Zz3Tv6dJb53S1v1XZ8bda4DwQ`.
+La transacción confirma las dos autoridades distintas (CPI 1 firmado por la wallet,
+CPI 2 por el PDA del mercado), `Min Amount Out: 1,990,000` — el 0,5 % de slippage por
+defecto —, el evento `SwapExecuted` con `A To B: true` y **17.031 CU de 200.000**.
+El desglose está en `frontend/README.md`.
+
+### Los tests del programa
 
 ```
 initialize_market (5)
@@ -345,7 +361,8 @@ swap_b_to_a (8)
 Fase 5.
 
 **Rúbrica cubierta:** mercado+liquidez con PDAs (30%) ✅ · swap A→B (20%) ✅ ·
-swap B→A (30%) ✅ · tests (parte del 20%) ✅ · documentación ⬜ (fase 9)
+swap B→A (30%) ✅ · tests (parte del 20%) ✅ · frontend ✅ (fase 7) ·
+documentación ⬜ (fase 9)
 
 ### Lo que resolvió la Fase 5
 
@@ -368,11 +385,29 @@ así que **tiene que correr antes que `set_price`**. Quitarla significaría perd
 el test afirma: que `initialize_market` NO deja el mercado operativo. Mocha respeta el
 orden de declaración; el test lo dice en un comentario.
 
-### Siguiente: Fase 6 — deploy en devnet
+### Siguiente: Fase 8 — faucet + metadata de Metaplex
 
-Deploy del programa en devnet, creación de las mints propias del proyecto y script de
-seed. La documentación **no** es la fase 6: el README y los diagramas van en la fase 9,
-junto con el deploy a Vercel.
+La Fase 7 (frontend Next.js) está cerrada, con el swap verificado on-chain desde el
+navegador — ver "Estado del programa".
+
+La documentación general **no** es la fase 8: el README de la raíz y los diagramas
+van en la fase 9, junto con el deploy a Vercel.
+
+#### ⛔ El mercado EURC/USDC queda descartado
+
+Era el contenido previsto de la Fase 8 y **no se hace**. Dos razones:
+
+1. **USDC y EURC de Circle tienen ambos 6 decimales.** Con `dec_a == dec_b`, los
+   factores `10^dec_a` y `10^dec_b` de la fórmula **se cancelan**: el mercado no
+   ejercita la conversión de escalas, que es justo lo que DEMO6/DEMO9 (6 y 9) sí
+   demuestra.
+2. **El visitante tendría que ir al faucet de Circle** para conseguir EURC o USDC de
+   devnet: una dependencia externa en mitad de la demo.
+
+No aporta nada que el mercado principal no demuestre ya.
+
+En su lugar, la Fase 8 es **faucet + metadata de Metaplex** para que DEMO6 y DEMO9
+aparezcan con nombre en las wallets en vez de como direcciones.
 
 ---
 
@@ -387,8 +422,8 @@ junto con el deploy a Vercel.
 | 4    | `swap_b_to_a` + invariante A→B→A                 | ✅     |
 | 5    | Endurecer la suite                               | ✅     |
 | 6    | Deploy devnet + mints propias + script de seed   | ✅     |
-| 7    | Frontend Next.js                                 | ⬅️ siguiente |
-| 8    | Faucet + mercado EURC/USDC                       | ⬜     |
+| 7    | Frontend Next.js                                 | ✅     |
+| 8    | Faucet + metadata de Metaplex (DEMO6/DEMO9)      | ⬅️ siguiente |
 | 9    | Vercel + README + diagramas + **verified build** | ⬜     |
 | 10   | Video + entrega GitHub/GitLab                    | ⬜     |
 
