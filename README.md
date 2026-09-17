@@ -4,7 +4,7 @@ A fixed-price SPL token swap on Solana, written in Rust with Anchor 1.2.0.
 
 My first Solana program, coming from Solidity and Cairo. Built as Module 15 of the CodeCrypto Master's in Blockchain Engineering & AI.
 
-> **Status:** phases 0–6 done · 27 tests passing · `tsc --noEmit` clean · **deployed on devnet and exercised with a real round trip** · frontend not started · not audited, educational code.
+> **Status:** phases 0–7 done, phase 8 starting · 27 program tests + 31 frontend tests passing · `tsc --noEmit` clean · **deployed on devnet and exercised with a real round trip** · frontend swapping from the browser against devnet, not hosted yet · not audited, educational code.
 
 ---
 
