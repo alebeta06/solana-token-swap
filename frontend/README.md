@@ -118,9 +118,31 @@ usuario se entera antes de intentarlo, no después de que falle. El faucet es la
 | `yarn build`                                         | ✅ |
 | Comprobación de manifest obsoleto rompe el build     | ✅ (provocada a propósito) |
 | Lectura del mercado real de devnet con estos módulos | ✅ (precio 2.000000, decimales 9/6, bóvedas 1000/2000) |
-| **Swap real desde el navegador con una wallet**      | ⬜ **NO VERIFICADO** |
+| **Swap real desde el navegador con una wallet**      | ✅ (Solflare, devnet) |
 
-El swap end-to-end no se ha podido probar: requiere una extensión de wallet en un
-navegador. La ruta de lectura sí está comprobada contra devnet, y la de escritura
-replica `scripts/swap-demo.ts`, que sí ha hecho swaps reales — pero eso es un
-argumento, no una prueba.
+## La prueba del swap end-to-end
+
+Swap real ejecutado desde el navegador con **Solflare** contra devnet:
+**1 DEMO9 → 2 DEMO6**.
+
+[Ver la transacción en Solana Explorer](https://explorer.solana.com/tx/24V6rz2WHL3FZsbzrGrUBU3RJEeGYmKZdgUjjw4C3cpqCQDxdZyghgQbHNb3ze4Zz3Tv6dJb53S1v1XZ8bda4DwQ?cluster=devnet)
+
+```
+24V6rz2WHL3FZsbzrGrUBU3RJEeGYmKZdgUjjw4C3cpqCQDxdZyghgQbHNb3ze4Zz3Tv6dJb53S1v1XZ8bda4DwQ
+```
+
+Lo que confirma, punto por punto:
+
+| Lo que se ve en la transacción      | Lo que demuestra                                           |
+| ----------------------------------- | ---------------------------------------------------------- |
+| CPI 1, authority = la wallet        | La firma del usuario se propaga al CPI — sin `approve`     |
+| CPI 2, authority = el PDA `market`  | `new_with_signer` con las seeds del mercado                |
+| `Min Amount Out: 1,990,000`         | El slippage por defecto del 0,5 % sobre los 2 DEMO6 esperados |
+| Evento `SwapExecuted`, `A To B: true` | Dirección resuelta por `market.ts`: DEMO9 es el token A  |
+| 17.031 CU de 200.000                | Margen de sobra sobre el límite por instrucción            |
+
+El `Min Amount Out` en unidades base con 6 decimales es 1,99 DEMO6 — el 99,5 % de los
+2 DEMO6 que da el precio de 2.000000. Que la salida real fuera exactamente 2 DEMO6
+(y no menos) es lo esperado en un mercado de precio fijo sin fees: el slippage aquí
+protege contra un `set_price` que se cuele entre la cotización y la confirmación, no
+contra el impacto del propio swap.
