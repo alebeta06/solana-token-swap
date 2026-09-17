@@ -1,0 +1,49 @@
+@import "tailwindcss";
+
+/*
+ * Solana palette. Decided before writing any component so no component invents
+ * its own colour.
+ */
+@theme {
+  --color-sol-purple: #9945ff;
+  --color-sol-green: #14f195;
+  --color-sol-amber: #f5a623;
+  --color-sol-red: #ff5c5c;
+
+  --color-bg: #0b0b14;
+  --color-surface: #14141f;
+  --color-surface-2: #1c1c2b;
+  --color-line: #2a2a3c;
+  --color-text: #e8e8f0;
+  --color-muted: #9494a8;
+
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+
+html,
+body {
+  background-color: var(--color-bg);
+  color: var(--color-text);
+}
+
+body {
+  min-height: 100dvh;
+  background-image:
+    radial-gradient(60rem 40rem at 15% -10%, rgb(153 69 255 / 0.16), transparent 60%),
+    radial-gradient(50rem 35rem at 90% 0%, rgb(20 241 149 / 0.1), transparent 55%);
+  background-attachment: fixed;
+}
+
+/* The wallet-adapter button, dressed to match the rest. */
+.wallet-adapter-button-trigger {
+  background-color: var(--color-sol-purple) !important;
+  border-radius: 0.75rem !important;
+  font-family: var(--font-sans) !important;
+  font-size: 0.875rem !important;
+  height: 2.5rem !important;
+}
+
+.wallet-adapter-modal-wrapper {
+  background-color: var(--color-surface) !important;
+}
