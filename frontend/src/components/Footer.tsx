@@ -6,9 +6,8 @@ const LINKS = [
 
 export function Footer() {
   return (
-    <footer className="mt-12 flex flex-wrap items-center justify-between gap-4 border-t border-line pt-6 text-sm text-muted">
-      <span>CodeCrypto Máster · Module 15 · Alejandro Beta</span>
-      <nav className="flex gap-5">
+    <footer className="mt-12 flex justify-center border-t border-line pt-6 text-sm text-muted">
+      <nav className="flex flex-wrap justify-center gap-6">
         {LINKS.map((link) => (
           <a
             key={link.label}
