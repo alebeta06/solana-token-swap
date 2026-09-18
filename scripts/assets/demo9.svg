@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <!-- DEMO9: fondo verde Solana (#14F195) con glifo '9' en tono oscuro dApp (#0B0B14).
+       El color verde brillante y el contraste invertido garantizan diferenciación absoluta. -->
+  <circle cx="256" cy="256" r="256" fill="#14F195"/>
+  <g fill="none" stroke="#0B0B14" stroke-width="84" stroke-linecap="round">
+    <circle cx="256" cy="192" r="102"/>
+    <path d="M358 192 C358 326, 298 392, 178 402"/>
+  </g>
+</svg>

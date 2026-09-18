@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <!-- DEMO6: fondo morado Solana (#9945FF) con glifo '6' en blanco de alto contraste.
+       El color morado es el identificador primario instantáneo a 24px en la wallet. -->
+  <circle cx="256" cy="256" r="256" fill="#9945FF"/>
+  <g fill="none" stroke="#FFFFFF" stroke-width="84" stroke-linecap="round">
+    <circle cx="256" cy="320" r="102"/>
+    <path d="M154 320 C154 186, 214 120, 334 110"/>
+  </g>
+</svg>
