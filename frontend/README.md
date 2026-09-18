@@ -64,12 +64,13 @@ rompiendo las copias a propósito: el build falla con
 src/
   app/          layout, providers (wallet + connection), página única
     api/faucet/   🔴 route handler del faucet — el único sitio con clave privada
-  components/   Header · MarketPanel · FaucetNotice · SwapCard · TxResult · Footer
+  components/   Header · MarketPanel · FaucetPanel · SwapCard · TxResult · Footer
   hooks/        useMarketState · useTokenBalances · useSolBalance
   lib/
     manifest.ts  el manifest tipado + la comprobación de obsolescencia
     rpc.ts       el endpoint RPC, resuelto una vez para servidor y navegador
     faucet.ts    🔴 la política del faucet, sin red                (faucet.test.ts)
+    faucetStatus.ts  qué significa cada respuesta del faucet    (faucetStatus.test.ts)
     market.ts    🔴 símbolo ↔ A/B y dirección del swap          (market.test.ts)
     units.ts     unidades base ↔ display, todo en bigint        (units.test.ts)
     quote.ts     la aritmética del programa, en el cliente      (quote.test.ts)
@@ -78,7 +79,7 @@ src/
     errors.ts    código de error de Anchor → una frase útil
 ```
 
-`yarn test` (vitest, 44 tests) cubre los cuatro módulos puros. No tocan la red: la
+`yarn test` (vitest, 55 tests) cubre los cinco módulos puros. No tocan la red: la
 política del faucet se decide en `faucet.ts` justo para poder probarla sin cadena.
 
 ### 🔴 El mapeo A/B
@@ -113,8 +114,7 @@ no está instalado a propósito.
 ## El faucet — `POST /api/faucet`
 
 Acuña **10 DEMO9 y 20 DEMO6** a la ATA de una wallet que no tenga ninguno de los dos.
-Fase 8, paso 3. La UI que lo llama es el paso 4: por ahora el aviso que hay encima de
-la tarjeta de swap sigue diciendo que no hay faucet.
+Lo llama el botón de `FaucetPanel`, encima de la tarjeta de swap.
 
 ```bash
 curl -X POST http://localhost:3000/api/faucet \
@@ -135,6 +135,50 @@ El 200 **no se devuelve por optimismo**: tras confirmar la transacción se relee
 dos ATAs y se exige que el delta sea exactamente el prometido. Si no cuadra, es un 502
 con la firma para que se pueda mirar. (Viene de un fallo real del paso 1 de esta fase:
 un `curl` de verificación que no miraba su propio status habría dado por bueno un 404.)
+
+### La UI — `FaucetPanel`
+
+Cada respuesta del endpoint significa algo distinto para quien pulsa el botón, y la
+traducción vive en `src/lib/faucetStatus.ts` —sin red, con tests— no en el componente.
+
+| Código | Tono | Título | Por qué ese tono |
+| ------ | ---- | ------ | ---------------- |
+| 200 | verde `#14F195` | Tokens sent | Acaba de confirmarse algo on-chain; enlaza la firma |
+| 429 | ámbar `#F5A623` | You already have tokens | 🔴 **No es un error.** Ya tiene lo que venía a pedir |
+| 503 | ámbar `#F5A623` | The faucet is empty | No es culpa suya, y el texto lo dice |
+| 400 | ámbar `#F5A623` | Connect your wallet first | Le falta un paso, no ha fallado nada |
+| 500 · 502 · sin respuesta | rojo `#FF5C5C` | | Lo único que de verdad está roto |
+
+**El rojo se reserva a lo que está roto.** Un 429 en rojo, junto a los demás, haría
+parecer averiado un faucet que funciona perfectamente: el mensaje va en positivo y sin
+las palabras "error", "failed" ni "rejected" — hay un test que lo comprueba.
+
+El verde se reserva a "acaba de pasar algo en la cadena", que es lo que significa en
+`TxResult`. El 429 es un estado bueno, pero no ha acuñado nada; en verde parecería que
+sí.
+
+El botón queda deshabilitado sin wallet (*"Connect a wallet to use the faucet"*) y
+mientras la petición está en vuelo (*"Minting…"*, con un punto que pulsa). Al recibir
+un 200 refresca los balances de la tarjeta de swap.
+
+**El aviso del SOL está siempre visible**, no solo tras acuñar: el faucet da tokens, no
+SOL, y sin SOL el swap falla al firmar. Enseñarlo después del 200 sería tarde — para
+entonces ya ha pulsado Swap y ha visto un error que no entiende. Lleva enlace a
+`faucet.solana.com` y el comando de CLI.
+
+`data-testid`: `faucet-panel`, `faucet-submit`, `faucet-status` (con `data-tone`),
+`faucet-tx-link`, `faucet-sol-notice`, `sol-faucet-link`.
+
+### Límites conocidos de la verificación
+
+- **El 503 del servidor nunca se ha ejercitado.** Provocarlo exigiría drenar el faucet
+  por debajo de 0,05 SOL. Lo que sí está cubierto es el 429/503 **de la UI**: que la
+  respuesta se traduzca al tono y al texto correctos tiene test. Queda escrito como
+  límite conocido, no como olvido.
+- **No hay tests de render.** Vitest corre en `environment: "node"` y no están
+  instalados `jsdom` ni `@testing-library/react`. Meter dos dependencias de peso en el
+  último paso de la fase sería encender algo "por si acaso"; la lógica que decidiría
+  el render está extraída a `faucetStatus.ts` justo para poder probarla sin DOM.
 
 ### 🔴 La clave privada
 
@@ -210,7 +254,7 @@ la keypair **no está en el repo** y no debe estarlo.
 
 | Comprobación                                        | Estado |
 | --------------------------------------------------- | ------ |
-| `yarn test` — 44 tests (31 + 13 del faucet)           | ✅ |
+| `yarn test` — 55 tests (31 + 13 política + 11 estados) | ✅ |
 | `yarn typecheck`                                     | ✅ |
 | `yarn build`                                         | ✅ |
 | Comprobación de manifest obsoleto rompe el build     | ✅ (provocada a propósito) |

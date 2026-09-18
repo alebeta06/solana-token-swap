@@ -3,7 +3,7 @@
 import { useCallback } from "react";
 import { Header } from "@/components/Header";
 import { Footer } from "@/components/Footer";
-import { FaucetNotice } from "@/components/FaucetNotice";
+import { FaucetPanel } from "@/components/FaucetPanel";
 import { MarketPanel } from "@/components/MarketPanel";
 import { SwapCard } from "@/components/SwapCard";
 import { useMarketState } from "@/hooks/useMarketState";
@@ -31,8 +31,8 @@ export default function Home() {
         </div>
 
         <div className="flex flex-col gap-4">
-          {/* El aviso va antes del swap, no después de que falle. */}
-          <FaucetNotice />
+          {/* El faucet va antes del swap, no después de que falle. */}
+          <FaucetPanel onFunded={refreshBalances} />
           <SwapCard state={state} balances={balances} onDone={refreshAll} />
         </div>
       </div>
