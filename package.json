@@ -2,6 +2,8 @@
   "license": "ISC",
   "scripts": {
     "typecheck": "tsc --noEmit",
+    "typecheck:frontend": "yarn --cwd frontend typecheck",
+    "typecheck:all": "yarn typecheck && yarn typecheck:frontend",
     "lint:fix": "prettier */*.js \"*/**/*{.js,.ts}\" -w",
     "lint": "prettier */*.js \"*/**/*{.js,.ts}\" --check"
   },

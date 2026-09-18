@@ -80,6 +80,40 @@ anchor test --skip-local-validator
 Sin `rm -rf test-ledger`, el ledger conserva los mercados de la corrida anterior y los
 tests fallan con "account already in use".
 
+### ⚠️ El repo tiene DOS alcances: correr uno no es correr todo
+
+Hay **dos `tsconfig.json`** y **dos runners de test**, con alcances disjuntos:
+
+| Alcance      | tsconfig                | Runner | Qué cubre                             |
+| ------------ | ----------------------- | ------ | ------------------------------------- |
+| Raíz         | `tsconfig.json`         | Mocha (`ts-mocha`) | `scripts/`, `tests/`, `target/types/` |
+| Frontend     | `frontend/tsconfig.json`| Vitest | `frontend/**`                         |
+
+**Quien corre uno y cree que ha corrido todo, se equivoca. Ya ha causado dos falsos
+positivos.** Las dos configuraciones son incompatibles a propósito: la raíz va en
+`commonjs` sin `jsx` ni `dom`; el frontend en `esnext` + `bundler` con `jsx`,
+`resolveJsonModule` y el alias `@/`.
+
+El comando que cubre los dos a la vez:
+
+```bash
+yarn typecheck:all      # = yarn typecheck && yarn typecheck:frontend
+```
+
+⚠️ **Para los tests no existe equivalente**: hay que correr los dos a mano.
+
+```bash
+anchor test --skip-local-validator   # 27 tests del programa (necesita el validador)
+yarn --cwd frontend test             # 31 tests de vitest
+```
+
+**El `include` del tsconfig raíz es explícito y debe seguir siéndolo.** Sin `include`
+ni `exclude`, TypeScript arrastra *todo* el subárbol: hasta la Fase 8 el alcance raíz
+eran 37 ficheros, 29 de ellos de `frontend/`, comprobados por segunda vez con la
+configuración equivocada y produciendo 141 errores que no eran reales. `skipLibCheck`
+tampoco es cosmético: `@metaplex-foundation/umi` publica `.d.ts` que referencian tipos
+que no define, y sin esa opción no compila nada que importe umi.
+
 ### ⚠️ Cuándo el IDL se queda atrás
 
 Si el cliente TS falla con `program.methods.X is not a function`, el IDL no incluye la
