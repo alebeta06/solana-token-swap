@@ -14,6 +14,10 @@ Optional `.env.local` (see `.env.local.example`): `NEXT_PUBLIC_RPC_URL` for a
 dedicated devnet RPC. Without it the app uses `clusterApiUrl("devnet")`, which is
 rate-limited but enough for a demo.
 
+Para que el faucet funcione en local hace falta además `FAUCET_KEYPAIR` — ver
+"El faucet" más abajo. Sin ella la web va entera menos `/api/faucet`, que
+responde 500.
+
 ## ⚠️ `yarn sync:onchain` — cuándo hay que reejecutarlo
 
 El frontend **no** lee `target/` ni el `devnet.json` de la raíz en tiempo de
@@ -59,10 +63,13 @@ rompiendo las copias a propósito: el build falla con
 ```
 src/
   app/          layout, providers (wallet + connection), página única
+    api/faucet/   🔴 route handler del faucet — el único sitio con clave privada
   components/   Header · MarketPanel · FaucetNotice · SwapCard · TxResult · Footer
   hooks/        useMarketState · useTokenBalances · useSolBalance
   lib/
     manifest.ts  el manifest tipado + la comprobación de obsolescencia
+    rpc.ts       el endpoint RPC, resuelto una vez para servidor y navegador
+    faucet.ts    🔴 la política del faucet, sin red                (faucet.test.ts)
     market.ts    🔴 símbolo ↔ A/B y dirección del swap          (market.test.ts)
     units.ts     unidades base ↔ display, todo en bigint        (units.test.ts)
     quote.ts     la aritmética del programa, en el cliente      (quote.test.ts)
@@ -71,7 +78,8 @@ src/
     errors.ts    código de error de Anchor → una frase útil
 ```
 
-`yarn test` (vitest, 31 tests) cubre los tres módulos puros. No tocan la red.
+`yarn test` (vitest, 44 tests) cubre los cuatro módulos puros. No tocan la red: la
+política del faucet se decide en `faucet.ts` justo para poder probarla sin cadena.
 
 ### 🔴 El mapeo A/B
 
@@ -102,23 +110,113 @@ el literal antes de aplicarlo. Mismo patrón que `scripts/swap-demo.ts`.
 Wallet Standard y se anuncian solas; el adapter las recoge. `@solana/wallet-adapter-wallets`
 no está instalado a propósito.
 
-### Sin faucet en esta fase
+## El faucet — `POST /api/faucet`
 
-La mint authority de DEMO6 y DEMO9 es la wallet del desplegador, así que **solo ella**
-puede conseguir tokens de prueba. El aviso está siempre visible encima de la tarjeta
-de swap, y con balance cero el botón queda deshabilitado con "Not enough …": el
-usuario se entera antes de intentarlo, no después de que falle. El faucet es la fase 8.
+Acuña **10 DEMO9 y 20 DEMO6** a la ATA de una wallet que no tenga ninguno de los dos.
+Fase 8, paso 3. La UI que lo llama es el paso 4: por ahora el aviso que hay encima de
+la tarjeta de swap sigue diciendo que no hay faucet.
+
+```bash
+curl -X POST http://localhost:3000/api/faucet \
+  -H 'content-type: application/json' \
+  -d '{"address":"<wallet>"}'
+```
+
+| Código | Cuándo |
+| ------ | ------ |
+| 200 | Acuñado y **verificado**: devuelve `signature` y los saldos nuevos |
+| 400 | La dirección falta, no es base58 válido, o es una PDA |
+| 429 | Esa wallet ya tiene saldo de alguno de los dos tokens |
+| 500 | `FAUCET_KEYPAIR` mal puesta o ausente (configuración del servidor) |
+| 502 | La transacción no confirmó, o confirmó sin mover los saldos |
+| 503 | El faucet se quedó sin SOL |
+
+El 200 **no se devuelve por optimismo**: tras confirmar la transacción se releen las
+dos ATAs y se exige que el delta sea exactamente el prometido. Si no cuadra, es un 502
+con la firma para que se pueda mirar. (Viene de un fallo real del paso 1 de esta fase:
+un `curl` de verificación que no miraba su propio status habría dado por bueno un 404.)
+
+### 🔴 La clave privada
+
+`FAUCET_KEYPAIR` **no lleva el prefijo `NEXT_PUBLIC_`**, y es lo único que la mantiene
+privada: Next sustituye en el JavaScript del navegador, literalmente y en tiempo de
+build, el valor de toda variable que lleve ese prefijo. Con él, la clave quedaría
+publicada en cuanto alguien abriera la web.
+
+Solo la lee `src/app/api/faucet/route.ts`, y dentro del handler — nunca al importar el
+módulo, para que el proceso de build no la tenga en memoria.
+
+**Comprobado, no supuesto.** Build con un canario en lugar de la clave real
+(`FAUCET_KEYPAIR=CANARY-PRIVATE-…`), y grep sobre lo que se sirve al cliente:
+
+| Patrón | `.next/static` | Todo `.next` |
+| ------ | -------------- | ------------ |
+| El canario privado | 0 ficheros | **0 ficheros** |
+| `FAUCET_KEYPAIR` | 0 ficheros | — |
+| Canario **público** (`NEXT_PUBLIC_RPC_URL`) | 1 fichero | — |
+| Pubkey del faucet (dato del manifest) | 2 ficheros | — |
+
+Las dos últimas filas son el control positivo: sin ellas, un cero en las dos primeras
+podría significar simplemente que el grep está mal escrito. Se usa un canario y no la
+clave real para no pasearla por la línea de comandos ni por el historial del shell.
+
+### Los dos límites, y lo que NO frenan
+
+El activo que hay que proteger **no son los tokens** — los acuña este faucet y no valen
+nada. Es **el SOL del faucet**: cada ATA nueva cuesta ~0,002 SOL de renta que paga él.
+
+1. **Límite de saldo → 429.** Si la wallet ya tiene DEMO6 o DEMO9, no se le acuña.
+   Frena la **repetición honesta**: el clic repetido por impaciencia, que es el caso
+   real y el que más SOL consume sin querer.
+2. **Umbral de SOL → 503.** Por debajo de **0,05 SOL** el faucet se apaga solo. Frena
+   el **drenaje**: deja de operar mientras aún le queda saldo, en vez de morir a mitad
+   de una transacción.
+
+**Ninguno de los dos frena a un atacante con direcciones nuevas.** Un bucle de pubkeys
+distintas pasa los dos límites, porque cada una es legítimamente alguien que nunca ha
+pedido nada. Está aceptado a propósito: lo que acota ese caso es **el saldo del faucet
+— 0,5 SOL, elegidos como tope de daño**, y el peor desenlace es quedarse sin faucet
+hasta que alguien lo recargue. Tampoco hay límite por IP ni contador en memoria: en
+Vercel cada instancia tiene su propia memoria y no se hablan entre sí, y una IP se
+rota, así que daría sensación de protección sin darla.
+
+#### Por qué el límite mira el saldo y no si la ATA existe
+
+Era la idea de partida y es **peor**. Crear la ATA de otro puede hacerlo cualquiera: la
+instrucción no exige la firma del dueño, solo que alguien pague la renta. Con "¿tiene
+ATA?" como criterio, un atacante creaba las ATAs de las direcciones que quisiera y las
+dejaba excluidas del faucet para siempre — el límite se convertía en un vector de
+bloqueo. Para bloquear a alguien con el criterio del saldo habría que **mandarle**
+tokens, y quien tiene tokens es justo a quien el faucet no necesita servir.
+
+**Limitación conocida del criterio del saldo:** quien reciba tokens, haga swaps y se
+quede a cero, puede volver a pedir. Sin un KV externo no hay forma de distinguirlo de
+un visitante nuevo, y se acepta: el coste de esa segunda vez es solo el mint, no la
+renta — la ATA ya existe.
+
+### Desplegar en Vercel (fase 9)
+
+En *Settings → Environment Variables*, **Production**:
+
+| Variable | Valor |
+| -------- | ----- |
+| `FAUCET_KEYPAIR` | El array JSON de 64 números del fichero de la keypair, en una línea |
+| `NEXT_PUBLIC_RPC_URL` | Opcional, un RPC de devnet dedicado |
+
+`FAUCET_KEYPAIR` no se marca como pública ni se renombra con el prefijo. El fichero de
+la keypair **no está en el repo** y no debe estarlo.
 
 ## Estado de verificación
 
 | Comprobación                                        | Estado |
 | --------------------------------------------------- | ------ |
-| `yarn test` — 31 tests                               | ✅ |
+| `yarn test` — 44 tests (31 + 13 del faucet)           | ✅ |
 | `yarn typecheck`                                     | ✅ |
 | `yarn build`                                         | ✅ |
 | Comprobación de manifest obsoleto rompe el build     | ✅ (provocada a propósito) |
 | Lectura del mercado real de devnet con estos módulos | ✅ (precio 2.000000, decimales 9/6, bóvedas 1000/2000) |
 | **Swap real desde el navegador con una wallet**      | ✅ (Solflare, devnet) |
+| La clave del faucet no llega al bundle               | ✅ (canario + control positivo) |
 
 ## La prueba del swap end-to-end
 
