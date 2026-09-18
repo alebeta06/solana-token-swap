@@ -453,15 +453,15 @@ orden de declaración; el test lo dice en un comentario.
 
 ### En curso: Fase 8 — faucet + metadata de Metaplex
 
-Cuatro pasos. **Los pasos 1 y 2 están cerrados; el 3 está escrito y a falta de
-probarlo contra devnet.**
+Cuatro pasos. **Los pasos 1 y 2 están cerrados; el 3 y el 4 están escritos y a falta
+de probarlos contra devnet desde el navegador.**
 
 | Paso | Contenido                                                        | Estado |
 | ---- | ---------------------------------------------------------------- | ------ |
 | 1    | Metadata de Metaplex en DEMO6 y DEMO9                            | ✅     |
 | 2    | Keypair dedicada del faucet + traspaso de la mint authority      | ✅     |
 | 3    | Route handler del faucet en Next.js (acuña a la ATA del visitante) | 🔄 escrito, sin probar |
-| 4    | Botón de faucet en el frontend, en lugar del `FaucetNotice`      | ⬜     |
+| 4    | Botón de faucet en el frontend, en lugar del `FaucetNotice`      | 🔄 escrito, sin probar |
 
 La documentación general **no** es la fase 8: el README de la raíz y los diagramas
 van en la fase 9, junto con el deploy a Vercel.
@@ -530,6 +530,10 @@ bundle y las variables de Vercel) está en `frontend/README.md`.
 ⚠️ **Pendiente: ejecutarlo contra devnet.** Falta `frontend/.env.local` con
 `FAUCET_KEYPAIR`, que crea Alejandro.
 
+⚠️ **La prueba de la UI va con una wallet NUEVA, no con la de Alejandro.** La suya ya
+tiene saldo de los dos tokens, así que el faucet le responderá siempre 429 y el camino
+del 200 —que es el que hay que ver funcionar desde el navegador— no se ejercitaría.
+
 **El límite mira el SALDO del destinatario, no si su ATA existe.** Crear la ATA de
 otro puede hacerlo cualquiera —la instrucción no exige la firma del dueño, solo que
 alguien pague la renta—, así que "¿tiene ATA?" como criterio convertía el límite en un
@@ -544,6 +548,21 @@ pública.
 valen nada. **Es el SOL del faucet:** cada ATA nueva cuesta ~0,002 SOL que paga el
 servidor, así que un bucle de direcciones distintas lo drena. De ahí el tope de 0,5 SOL
 del paso 2, y de ahí que el endpoint necesite rate limit.
+
+#### Paso 4 — la UI del faucet
+
+`FaucetPanel` sustituye al `FaucetNotice`. La traducción respuesta → mensaje vive en
+`frontend/src/lib/faucetStatus.ts`, sin red y con tests; el componente solo pinta.
+
+**El rojo se reserva a lo que está roto** (500, 502, sin respuesta). El 429 va en
+ámbar y en positivo: no es un fallo, es que esa wallet ya tiene lo que venía a pedir, y
+en rojo junto a los demás parecería averiado un faucet que funciona. El 503 dice que no
+es culpa del visitante. El verde sigue significando "acaba de confirmarse algo
+on-chain", igual que en `TxResult`.
+
+⚠️ **El 503 del servidor sigue sin ejercitarse:** provocarlo exigiría drenar el faucet
+por debajo de 0,05 SOL. Su renderizado sí está cubierto en test. Límite conocido,
+escrito en `frontend/README.md`.
 
 #### ⛔ El mercado EURC/USDC queda descartado
 
