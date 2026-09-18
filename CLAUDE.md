@@ -530,7 +530,7 @@ bundle y las variables de Vercel) está en `frontend/README.md`.
 ⚠️ **Pendiente: ejecutarlo contra devnet.** Falta `frontend/.env.local` con
 `FAUCET_KEYPAIR`, que crea Alejandro.
 
-⚠️ **La prueba de la UI va con una wallet NUEVA, no con la de Alejandro.** La suya ya
+⚠️ **Una wallet NUEVA por cada prueba, y nunca la de Alejandro.** La suya ya
 tiene saldo de los dos tokens, así que el faucet le responderá siempre 429 y el camino
 del 200 —que es el que hay que ver funcionar desde el navegador— no se ejercitaría.
 
@@ -559,6 +559,11 @@ del paso 2, y de ahí que el endpoint necesite rate limit.
 en rojo junto a los demás parecería averiado un faucet que funciona. El 503 dice que no
 es culpa del visitante. El verde sigue significando "acaba de confirmarse algo
 on-chain", igual que en `TxResult`.
+
+**Bug del paso 4, arreglado:** el faucet acuñaba bien y devolvía 502, porque la
+relectura posterior a la confirmación caía en un backend atrasado del RPC. Ver la
+lección de `minContextSlot` en "Convenciones" y el detalle en `frontend/README.md`.
+Los tres 500 de configuración ya devuelven cuál de los tres fallos es, con `reason`.
 
 ⚠️ **El 503 del servidor sigue sin ejercitarse:** provocarlo exigiría drenar el faucet
 por debajo de 0,05 SOL. Su renderizado sí está cubierto en test. Límite conocido,
@@ -637,6 +642,18 @@ trivial dado el historial de incompatibilidades de toolchain (ver "Entorno").
   el error crudo con su `stack` si no es de Anchor.
   Recibe un *thunk* (`() => …rpc()`), no una promesa ya lanzada, para que también capture
   lo que el cliente tire de forma síncrona antes de enviar la transacción.
+- 🔴 **Una prueba que modifica el estado que comprueba deja de ser válida a la segunda
+  ejecución.** Probar el faucet CREA la ATA, así que el segundo intento con la misma
+  wallet ya no reproduce el caso de una wallet nueva — que es el único caso que el
+  faucet existe para servir. **Wallet nueva por prueba, sin excepciones.** Reutilizarlas
+  ocultó durante todo el paso 3 de la Fase 8 un bug que devolvía 502 después de acuñar
+  bien. Aplica a cualquier prueba con efectos: el ledger de los tests (`rm -rf
+  test-ledger`) es el mismo principio.
+- 🔴 **En Solana, leer justo después de escribir necesita `minContextSlot`.** El RPC
+  público es un balanceador: sus backends van desfasados entre sí (medido: ~1,2 s en
+  devnet), así que la lectura posterior a una confirmación puede caer en un nodo que aún
+  no ha visto la transacción y devolver el estado viejo *sin error*. Se pasa el slot de
+  la confirmación y el RPC falla con `-32016` en vez de mentir. Ver `frontend/README.md`.
 - Rama única `main`
 
 ---

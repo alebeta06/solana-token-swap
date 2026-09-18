@@ -127,7 +127,7 @@ curl -X POST http://localhost:3000/api/faucet \
 | 200 | Acuñado y **verificado**: devuelve `signature` y los saldos nuevos |
 | 400 | La dirección falta, no es base58 válido, o es una PDA |
 | 429 | Esa wallet ya tiene saldo de alguno de los dos tokens |
-| 500 | `FAUCET_KEYPAIR` mal puesta o ausente (configuración del servidor) |
+| 500 | `FAUCET_KEYPAIR` ausente, mal formada, o de otra clave — con `reason` |
 | 502 | La transacción no confirmó, o confirmó sin mover los saldos |
 | 503 | El faucet se quedó sin SOL |
 
@@ -135,6 +135,44 @@ El 200 **no se devuelve por optimismo**: tras confirmar la transacción se relee
 dos ATAs y se exige que el delta sea exactamente el prometido. Si no cuadra, es un 502
 con la firma para que se pueda mirar. (Viene de un fallo real del paso 1 de esta fase:
 un `curl` de verificación que no miraba su propio status habría dado por bueno un 404.)
+
+### 🔴 Leer justo después de escribir: `minContextSlot`
+
+**El fallo que costó el paso 4.** El faucet acuñaba bien y devolvía 502: los tokens
+llegaban a la wallet y la UI decía que no. Al segundo clic salía un 429 diciendo que ya
+los tenía — dos mensajes que se contradicen, y los dos ciertos para la lectura que hizo
+cada uno.
+
+`confirmTransaction` se entera por **WebSocket**, en cuanto el nodo que confirmó la
+transacción la ve. La lectura siguiente es una **petición HTTP nueva**, y
+`api.devnet.solana.com` es un balanceador. Medido con 20 `getSlot` simultáneos:
+
+```
+slots devueltos en el mismo instante: 500549320 … 500549323
+spread entre backends = 3 slots (~1,2 s)
+```
+
+Si la relectura caía en un nodo atrasado, la ATA recién creada "no existía", el saldo
+salía 0 y el delta no cuadraba. Peor: `balanceOf` traduce "cuenta inexistente" a **0**,
+que es correcto ANTES de acuñar y es exactamente lo contrario DESPUÉS. El valor por
+defecto mentía en el único sitio donde importaba.
+
+El arreglo es `minContextSlot`, que es el mecanismo diseñado para esto: se pasa el slot
+de la confirmación y el RPC **prefiere fallar antes que contestar con datos
+anteriores**. Comprobado contra el RPC público:
+
+```
+minContextSlot = slot + 5000  →  -32016 "Minimum context slot has not been reached"
+minContextSlot = slot - 50    →  ok, context slot 500553712
+```
+
+Un nodo atrasado deja de ser un cero silencioso y pasa a ser un "todavía no" que se
+reintenta (15 s, cada 400 ms). **Y el 200 devuelve ese `slot`**, que el navegador
+reenvía en su refresco de saldos: sin eso, el frontend repetía la misma carrera que el
+handler acababa de ganar y pintaba 0 justo después de recibir tokens.
+
+Ni `finalized` arregla esto: el desfase es entre backends, no entre niveles de
+compromiso.
 
 ### La UI — `FaucetPanel`
 
@@ -171,6 +209,9 @@ entonces ya ha pulsado Swap y ha visto un error que no entiende. Lleva enlace a
 
 ### Límites conocidos de la verificación
 
+- **El 200 y el 429 del servidor sí están ejercitados contra devnet**; los tres 500
+  también, uno por cada fallo de configuración (variable ausente, contenido que no es
+  una keypair, y una keypair válida que no es la del faucet).
 - **El 503 del servidor nunca se ha ejercitado.** Provocarlo exigiría drenar el faucet
   por debajo de 0,05 SOL. Lo que sí está cubierto es el 429/503 **de la UI**: que la
   respuesta se traduzca al tono y al texto correctos tiene test. Queda escrito como
