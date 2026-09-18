@@ -5,11 +5,29 @@
   "mints": {
     "DEMO6": {
       "address": "EUbsGAeLh2d2qeptdgfsP6sanVzPZMTXN9P4e8sn4acR",
-      "decimals": 6
+      "decimals": 6,
+      "metadata": {
+        "name": "Demo Six",
+        "symbol": "DEMO6",
+        "imageCid": "bafkreidkf3h3ma7upgtzt3aclbetvf3jgrrsyb646esqglo6qbje6bxhhm",
+        "imageUri": "https://gold-neighbouring-ape-845.mypinata.cloud/ipfs/bafkreidkf3h3ma7upgtzt3aclbetvf3jgrrsyb646esqglo6qbje6bxhhm",
+        "jsonCid": "bafkreibzepqsprlbwwh5pu6bokbeetgebhi3cz6xkrvsgyo6ujbckxvcte",
+        "uri": "https://gold-neighbouring-ape-845.mypinata.cloud/ipfs/bafkreibzepqsprlbwwh5pu6bokbeetgebhi3cz6xkrvsgyo6ujbckxvcte",
+        "pda": "2siGjiNUh4fvEdCFUBDMmNBejTu8bCsCabyKo1hhYtKQ"
+      }
     },
     "DEMO9": {
       "address": "BzrxQu3xBu9kppHCHVUFBfRCHdu4hfVji9K5Xyj8VLRF",
-      "decimals": 9
+      "decimals": 9,
+      "metadata": {
+        "name": "Demo Nine",
+        "symbol": "DEMO9",
+        "imageCid": "bafkreicomwmikumnxhrnoy7bhbqndblxvbu3lub6bp4emax2rjkknp5sca",
+        "imageUri": "https://gold-neighbouring-ape-845.mypinata.cloud/ipfs/bafkreicomwmikumnxhrnoy7bhbqndblxvbu3lub6bp4emax2rjkknp5sca",
+        "jsonCid": "bafkreihvypaajv5benhwd37dmatyik5v5ejezr4wmjfg3nk3ycblqnxgcq",
+        "uri": "https://gold-neighbouring-ape-845.mypinata.cloud/ipfs/bafkreihvypaajv5benhwd37dmatyik5v5ejezr4wmjfg3nk3ycblqnxgcq",
+        "pda": "EDPtbvWK2o43A65oVAEXK7147bs3XLYFfPfNqTUfDqYZ"
+      }
     }
   },
   "market": {
@@ -23,5 +41,7 @@
     "price": "2000000"
   },
   "createdAt": "2026-09-15T22:28:56.157Z",
-  "seededAt": "2026-09-16T01:18:06.913Z"
+  "seededAt": "2026-09-16T01:18:06.913Z",
+  "metadataUploadedAt": "2026-09-18T05:33:08.403Z",
+  "metadataCreatedAt": "2026-09-18T05:33:12.779Z"
 }
