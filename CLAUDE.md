@@ -453,13 +453,14 @@ orden de declaración; el test lo dice en un comentario.
 
 ### En curso: Fase 8 — faucet + metadata de Metaplex
 
-Cuatro pasos. **Los pasos 1 y 2 están cerrados; el siguiente es el paso 3.**
+Cuatro pasos. **Los pasos 1 y 2 están cerrados; el 3 está escrito y a falta de
+probarlo contra devnet.**
 
 | Paso | Contenido                                                        | Estado |
 | ---- | ---------------------------------------------------------------- | ------ |
 | 1    | Metadata de Metaplex en DEMO6 y DEMO9                            | ✅     |
 | 2    | Keypair dedicada del faucet + traspaso de la mint authority      | ✅     |
-| 3    | Route handler del faucet en Next.js (acuña a la ATA del visitante) | ⬅️ siguiente |
+| 3    | Route handler del faucet en Next.js (acuña a la ATA del visitante) | 🔄 escrito, sin probar |
 | 4    | Botón de faucet en el frontend, en lugar del `FaucetNotice`      | ⬜     |
 
 La documentación general **no** es la fase 8: el README de la raíz y los diagramas
@@ -520,6 +521,20 @@ así que hoy es no-op); swap-demo siempre que le falte saldo. El arreglo es leer
 keypair del faucet de `FAUCET_KEYPAIR` para el `mintTo`. Sin hacer.
 
 #### Paso 3 — el único sitio del proyecto con una clave privada en un servidor
+
+`POST /api/faucet` acuña 10 DEMO9 + 20 DEMO6. La política vive en
+`frontend/src/lib/faucet.ts` —sin red, con 13 tests— y el handler solo habla con la
+cadena. El detalle completo (códigos de respuesta, los dos límites, la prueba del
+bundle y las variables de Vercel) está en `frontend/README.md`.
+
+⚠️ **Pendiente: ejecutarlo contra devnet.** Falta `frontend/.env.local` con
+`FAUCET_KEYPAIR`, que crea Alejandro.
+
+**El límite mira el SALDO del destinatario, no si su ATA existe.** Crear la ATA de
+otro puede hacerlo cualquiera —la instrucción no exige la firma del dueño, solo que
+alguien pague la renta—, así que "¿tiene ATA?" como criterio convertía el límite en un
+**vector de bloqueo**: un atacante excluía del faucet a las direcciones que quisiera.
+
 
 ⚠️ La variable de entorno con la keypair del faucet **NO lleva prefijo
 `NEXT_PUBLIC_`**. Ese prefijo la embebería en el bundle del navegador y la haría
