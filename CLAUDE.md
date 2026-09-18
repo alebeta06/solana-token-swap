@@ -4,8 +4,10 @@ Proyecto del Máster CodeCrypto (Blockchain Engineering & AI), Módulo 15 — To
 Swap de tokens SPL con precio fijo, en Anchor. **Primera experiencia del autor con
 Solana y Rust** — explicar antes de implementar, comparando siempre con Solidity/EVM.
 
-> ⚠️ **Estado actual: Fases 0–7 completadas. La siguiente es la Fase 8.**
-> Son 11 fases (0 a 10). Ver "Plan completo — las 11 fases" y "Estado del programa".
+> ⚠️ **Estado actual: Fases 0–7 completadas. La Fase 8 está EN CURSO — su paso 1
+> (metadata de Metaplex) está cerrado; el siguiente es el paso 2.**
+> Son 11 fases (0 a 10). Ver "En curso: Fase 8", "Plan completo — las 11 fases" y
+> "Estado del programa".
 
 ---
 
@@ -25,6 +27,12 @@ Solana y Rust** — explicar antes de implementar, comparando siempre con Solidi
   Se activó por error en la Fase 1 y se retiró en la Fase 2 al comprobar que no se usaba.
 - **NUNCA activar una feature "por si acaso".** Una feature encendida y sin usar amplía
   la superficie de ataque a cambio de nada.
+- **NUNCA generar keypairs desde el agente.** Las genera Alejandro en su terminal.
+  `solana-keygen new` es **la única operación del proyecto cuya salida es irrecuperable
+  si no se lee en el momento**: la seed phrase se imprime una vez y no se reconstruye
+  después. Un fichero de keypair de Solana son **64 bytes de clave en bruto y no
+  contiene la mnemónica** — de `faucet.json` NO se recupera la seed phrase. Además,
+  generarla desde un tool call la escribiría en el transcript de la sesión.
 - **NUNCA asumir que "token A" es el de menos decimales.** El orden A/B lo decide la
   comparación de pubkeys (`mint_a < mint_b`), no los decimales ni el valor. Cualquier
   test o código de cliente que lo asuma está mal. Ya causó un fallo en la Fase 4.
@@ -443,13 +451,84 @@ así que **tiene que correr antes que `set_price`**. Quitarla significaría perd
 el test afirma: que `initialize_market` NO deja el mercado operativo. Mocha respeta el
 orden de declaración; el test lo dice en un comentario.
 
-### Siguiente: Fase 8 — faucet + metadata de Metaplex
+### En curso: Fase 8 — faucet + metadata de Metaplex
 
-La Fase 7 (frontend Next.js) está cerrada, con el swap verificado on-chain desde el
-navegador — ver "Estado del programa".
+Cuatro pasos. **Los pasos 1 y 2 están cerrados; el siguiente es el paso 3.**
+
+| Paso | Contenido                                                        | Estado |
+| ---- | ---------------------------------------------------------------- | ------ |
+| 1    | Metadata de Metaplex en DEMO6 y DEMO9                            | ✅     |
+| 2    | Keypair dedicada del faucet + traspaso de la mint authority      | ✅     |
+| 3    | Route handler del faucet en Next.js (acuña a la ATA del visitante) | ⬅️ siguiente |
+| 4    | Botón de faucet en el frontend, en lugar del `FaucetNotice`      | ⬜     |
 
 La documentación general **no** es la fase 8: el README de la raíz y los diagramas
 van en la fase 9, junto con el deploy a Vercel.
+
+#### Paso 1 — metadata (cerrado)
+
+`scripts/upload-metadata.ts` (imagen + JSON a Pinata) y
+`scripts/create-token-metadata.ts` (`CreateMetadataAccountV3` sobre cada mint). Los
+`uri` y las PDAs quedaron registrados en `devnet.json`.
+
+⚠️ **Va antes del paso 2 por obligación:** `CreateMetadataAccountV3` exige que firme
+la **mint authority**. Una vez traspasada al faucet, la metadata solo la podría crear
+el faucet. En cambio la **update authority es un dato, no un firmante**: se fijó a
+`9aaPGTS7…` y ahí se queda. El faucet acuñará, pero no podrá renombrar los tokens.
+
+#### Paso 2 — keypair del faucet (cerrado)
+
+Keypair dedicada en `~/.solana-keys/faucet.json` (`chmod 600`, **fuera del repo**),
+que solo pueda acuñar DEMO6 y DEMO9. Objetivo: no poner en un servidor la clave que
+también es autoridad del programa desplegado y del mercado.
+
+Orden obligatorio, sin saltos:
+
+1. Generar la keypair.
+2. **Respaldarla y verificar el respaldo comparando pubkeys** (`solana-keygen pubkey`
+   sobre el original y sobre la copia) **antes de traspasar nada**. Si esa keypair se
+   pierde después del traspaso, DEMO6 y DEMO9 se quedan con el supply congelado para
+   siempre — nadie podrá volver a acuñar.
+3. Traspasar la mint authority de ambos mints, firmando con `9aaPGTS7…`.
+4. Enviar **0,5 SOL** al faucet. La cifra es deliberada: cada ATA nueva cuesta
+   ~0,002 SOL, así que cubre ~250 visitantes y es el **tope de daño** si alguien abusa.
+5. Verificar el traspaso por partida doble: `spl-token display` muestra la authority
+   nueva **y** `9aaPGTS7…` ya **no** puede acuñar (comprobarlo intentándolo). Lo
+   segundo es lo que demuestra que el privilegio se movió, no que se duplicó.
+6. Confirmar que la **update authority de la metadata NO cambió**.
+
+En el manifest se registra **solo la pubkey** del faucet. Nunca la privada, ni el
+fichero, ni en ningún `.env` commiteado.
+
+**Resultado (2026-09-18)** — `scripts/transfer-mint-authority.ts`, que hace dry-run por
+defecto y solo firma con `--execute`:
+
+| Comprobación                                              | Resultado |
+| --------------------------------------------------------- | --------- |
+| Faucet                                                     | `GTxTmFKt58JTTAVohkSM9aKfiFsz2atoo7GEPfFMmik2` |
+| Mint authority de DEMO6 y DEMO9 (`spl-token display`)      | el faucet ✅ |
+| `9aaPGTS7…` intenta acuñar                                 | falla con `owner does not match` ✅ |
+| Update authority de la metadata de ambos                   | sigue en `9aaPGTS7…` ✅ |
+| Balance del faucet                                         | 0,5 SOL ✅ |
+
+Firmas: DEMO6 `4BEabMLj…`, DEMO9 `3DF6be5a…`, fondeo `3ob27XJd…`.
+
+⚠️ **Efecto colateral abierto:** `scripts/seed-market.ts` y `scripts/swap-demo.ts`
+acuñan con `~/.config/solana/id.json`, que ya no es mint authority. Fallarán **cuando
+necesiten acuñar** — seed-market solo si hay déficit en las bóvedas (hoy están llenas,
+así que hoy es no-op); swap-demo siempre que le falte saldo. El arreglo es leer la
+keypair del faucet de `FAUCET_KEYPAIR` para el `mintTo`. Sin hacer.
+
+#### Paso 3 — el único sitio del proyecto con una clave privada en un servidor
+
+⚠️ La variable de entorno con la keypair del faucet **NO lleva prefijo
+`NEXT_PUBLIC_`**. Ese prefijo la embebería en el bundle del navegador y la haría
+pública.
+
+⚠️ **El vector de ataque a vigilar no es el supply de tokens** — DEMO6 y DEMO9 no
+valen nada. **Es el SOL del faucet:** cada ATA nueva cuesta ~0,002 SOL que paga el
+servidor, así que un bucle de direcciones distintas lo drena. De ahí el tope de 0,5 SOL
+del paso 2, y de ahí que el endpoint necesite rate limit.
 
 #### ⛔ El mercado EURC/USDC queda descartado
 
@@ -462,10 +541,9 @@ Era el contenido previsto de la Fase 8 y **no se hace**. Dos razones:
 2. **El visitante tendría que ir al faucet de Circle** para conseguir EURC o USDC de
    devnet: una dependencia externa en mitad de la demo.
 
-No aporta nada que el mercado principal no demuestre ya.
-
-En su lugar, la Fase 8 es **faucet + metadata de Metaplex** para que DEMO6 y DEMO9
-aparezcan con nombre en las wallets en vez de como direcciones.
+No aporta nada que el mercado principal no demuestre ya. En su lugar, la Fase 8 es
+el faucet y la metadata: que DEMO6 y DEMO9 aparezcan con nombre en las wallets, y que
+cualquier visitante consiga tokens sin pedírselos al desplegador.
 
 ---
 
@@ -481,7 +559,7 @@ aparezcan con nombre en las wallets en vez de como direcciones.
 | 5    | Endurecer la suite                               | ✅     |
 | 6    | Deploy devnet + mints propias + script de seed   | ✅     |
 | 7    | Frontend Next.js                                 | ✅     |
-| 8    | Faucet + metadata de Metaplex (DEMO6/DEMO9)      | ⬅️ siguiente |
+| 8    | Faucet + metadata de Metaplex (DEMO6/DEMO9)      | 🔄 en curso (paso 1 de 4 ✅) |
 | 9    | Vercel + README + diagramas + **verified build** | ⬜     |
 | 10   | Video + entrega GitHub/GitLab                    | ⬜     |
 
