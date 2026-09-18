@@ -28,7 +28,12 @@ const TONE_CLASSES: Record<FaucetTone, { box: string; title: string }> = {
   error: { box: "border-sol-red/40 bg-sol-red/10", title: "text-sol-red" },
 };
 
-export function FaucetPanel({ onFunded }: { onFunded: () => void }) {
+export function FaucetPanel({
+  onFunded,
+}: {
+  /** Called with the slot the mint confirmed at, so the refresh can demand it. */
+  onFunded: (minContextSlot?: number) => void;
+}) {
   const { publicKey } = useWallet();
   const [pending, setPending] = useState(false);
   const [outcome, setOutcome] = useState<FaucetOutcome | null>(null);
@@ -48,7 +53,7 @@ export function FaucetPanel({ onFunded }: { onFunded: () => void }) {
       const body = await response.json().catch(() => null);
       const next = describeFaucetResponse(response.status, body);
       setOutcome(next);
-      if (next.tone === "success") onFunded();
+      if (next.tone === "success") onFunded(next.slot);
     } catch {
       setOutcome(describeFaucetFailure());
     } finally {

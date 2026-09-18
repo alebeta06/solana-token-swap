@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { describeFaucetFailure, describeFaucetResponse } from "./faucetStatus";
 
 const MINTED = {
+  slot: 500545959,
   signature: "5Xk9".padEnd(88, "a"),
   recipient: "9aaPGTS7DikpFQugaPZVzVTaQ7dagUk1GpUwBDo15Y4y",
   amounts: [
@@ -17,6 +18,18 @@ describe("describeFaucetResponse", () => {
     expect(outcome.message).toContain("10 DEMO9");
     expect(outcome.message).toContain("20 DEMO6");
     expect(outcome.signature).toBe(MINTED.signature);
+  });
+
+  it("carries the confirmation slot so the balance refresh can demand it", () => {
+    // 🔴 Sin el slot, el navegador repite la carrera contra el RPC que el
+    // handler acaba de ganar y pinta 0 justo después de recibir tokens.
+    expect(describeFaucetResponse(200, MINTED).slot).toBe(500545959);
+  });
+
+  it("does not invent a slot when the body has none or it is not a number", () => {
+    expect(describeFaucetResponse(200, { signature: "s" }).slot).toBeUndefined();
+    expect(describeFaucetResponse(200, { signature: "s", slot: "500" }).slot).toBeUndefined();
+    expect(describeFaucetResponse(200, { signature: "s", slot: NaN }).slot).toBeUndefined();
   });
 
   it("scales each amount by its own decimals, never by a shared factor", () => {
@@ -62,6 +75,36 @@ describe("describeFaucetResponse", () => {
   it("marks only a broken deployment and an unconfirmed mint as errors", () => {
     expect(describeFaucetResponse(500, {}).tone).toBe("error");
     expect(describeFaucetResponse(502, {}).tone).toBe("error");
+  });
+
+  it("names which configuration fault it is, not just 'unavailable'", () => {
+    // 🔴 Esto es lo que se ve al olvidar la variable en el panel de Vercel. El
+    // detalle vive en el servidor y tiene que LLEGAR, no quedarse en el log.
+    const missing = describeFaucetResponse(500, {
+      reason: "missing",
+      error: "No faucet key is configured on this deployment: the FAUCET_KEYPAIR …",
+    });
+    expect(missing.title).toBe("No faucet key configured");
+    expect(missing.message).toMatch(/FAUCET_KEYPAIR/);
+
+    expect(describeFaucetResponse(500, { reason: "malformed", error: "x" }).title).toMatch(
+      /malformed/i
+    );
+    expect(describeFaucetResponse(500, { reason: "mismatch", error: "x" }).title).toMatch(
+      /does not match/i
+    );
+  });
+
+  it("falls back to a general message when the server sends no reason", () => {
+    const outcome = describeFaucetResponse(500, {});
+    expect(outcome.title).toBe("The faucet is not available here");
+    expect(outcome.message).toMatch(/no faucet key configured/i);
+  });
+
+  it("ignores a reason it does not know instead of showing it raw", () => {
+    const outcome = describeFaucetResponse(500, { reason: "banana", error: "Something" });
+    expect(outcome.title).toBe("The faucet is not available here");
+    expect(outcome.message).toBe("Something");
   });
 
   it("carries the signature of an unconfirmed mint so it can be looked at", () => {

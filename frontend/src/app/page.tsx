@@ -32,7 +32,7 @@ export default function Home() {
 
         <div className="flex flex-col gap-4">
           {/* El faucet va antes del swap, no después de que falle. */}
-          <FaucetPanel onFunded={refreshBalances} />
+          <FaucetPanel onFunded={(slot) => void refreshBalances({ minContextSlot: slot })} />
           <SwapCard state={state} balances={balances} onDone={refreshAll} />
         </div>
       </div>

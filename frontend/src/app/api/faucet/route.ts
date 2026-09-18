@@ -22,8 +22,8 @@ import {
   Connection,
   Keypair,
   PublicKey,
+  SolanaJSONRPCError,
   Transaction,
-  sendAndConfirmTransaction,
 } from "@solana/web3.js";
 import {
   TokenAccountNotFoundError,
@@ -32,6 +32,7 @@ import {
   createMintToInstruction,
   getAccount,
   getAssociatedTokenAddress,
+  unpackAccount,
 } from "@solana/spl-token";
 import { manifest } from "@/lib/manifest";
 import { rpcEndpoint } from "@/lib/rpc";
@@ -49,14 +50,40 @@ import {
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+/** How long to keep asking for a read that reflects the mint before giving up. */
+const VERIFY_TIMEOUT_MS = 15_000;
+const VERIFY_POLL_MS = 400;
+
+/** JSON-RPC code for "this node has not reached the slot you asked for". */
+const SLOT_NOT_REACHED = -32016;
+
+type ConfigFault = "missing" | "malformed" | "mismatch";
+
+/**
+ * A faucet that cannot sign. Carries WHICH of the three faults it is, because
+ * each one needs a different thing from whoever deployed this.
+ */
+class FaucetConfigError extends Error {
+  constructor(
+    readonly reason: ConfigFault,
+    message: string
+  ) {
+    super(message);
+  }
+}
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
 /** Reads the faucet keypair, and refuses to sign with a key we did not expect. */
 function loadFaucetKeypair(): Keypair {
   const raw = process.env.FAUCET_KEYPAIR;
   if (!raw) {
-    throw new Error(
-      "FAUCET_KEYPAIR is not set. Put the contents of the faucet keypair file " +
-        "(the JSON array of 64 numbers) in frontend/.env.local. Never name it " +
-        "NEXT_PUBLIC_FAUCET_KEYPAIR: that would ship it to the browser."
+    throw new FaucetConfigError(
+      "missing",
+      "No faucet key is configured on this deployment: the FAUCET_KEYPAIR environment " +
+        "variable is not set. It holds the JSON array of 64 numbers that solana-keygen " +
+        "writes. It must NOT be named NEXT_PUBLIC_FAUCET_KEYPAIR: that would ship the " +
+        "key to the browser."
     );
   }
 
@@ -66,14 +93,17 @@ function loadFaucetKeypair(): Keypair {
   } catch {
     // 🇪🇸 NOTA: el error original NO se propaga. Un JSON.parse fallido incluye
     // un trozo del texto que intentó parsear — es decir, de la clave.
-    throw new Error(
-      "FAUCET_KEYPAIR is not a JSON array of 64 numbers, as written by solana-keygen."
+    throw new FaucetConfigError(
+      "malformed",
+      "FAUCET_KEYPAIR is set but is not the JSON array of 64 numbers that solana-keygen " +
+        "writes. Check that the whole array was pasted, on one line and without quotes."
     );
   }
 
   const expected = manifest.faucet?.pubkey;
   if (expected && keypair.publicKey.toBase58() !== expected) {
-    throw new Error(
+    throw new FaucetConfigError(
+      "mismatch",
       `FAUCET_KEYPAIR holds ${keypair.publicKey.toBase58()}, but the manifest records the ` +
         `faucet as ${expected}. The mint authority was handed to the latter, so this key ` +
         `could not mint anyway.`
@@ -82,7 +112,14 @@ function loadFaucetKeypair(): Keypair {
   return keypair;
 }
 
-/** Current balance of `ata`, or 0 when the account does not exist yet. */
+/**
+ * Current balance of `ata`, or 0 when the account does not exist yet.
+ *
+ * 🔴 Solo vale para la lectura PREVIA. Una ATA que no existe es, legítimamente,
+ * saldo cero. Después de acuñar significa lo contrario —la cuenta acaba de
+ * crearse y el nodo que responde no la ve todavía— y por eso la comprobación
+ * posterior NO usa esta función. Ver `balancesAtSlot`.
+ */
 async function balanceOf(connection: Connection, ata: PublicKey): Promise<bigint> {
   try {
     return (await getAccount(connection, ata)).amount;
@@ -95,6 +132,37 @@ async function balanceOf(connection: Connection, ata: PublicKey): Promise<bigint
     }
     throw err;
   }
+}
+
+/** True when the RPC refused because the node it hit is behind `minContextSlot`. */
+function isBehind(err: unknown): boolean {
+  return err instanceof SolanaJSONRPCError && err.code === SLOT_NOT_REACHED;
+}
+
+/**
+ * Balances read from a node that has AT LEAST reached `minContextSlot`.
+ *
+ * 🔴 Aquí estaba el bug del paso 4. `confirmTransaction` se entera por
+ * WebSocket en cuanto el nodo que confirmó la ve, pero la lectura siguiente es
+ * una petición HTTP nueva, y el endpoint público de devnet es un balanceador:
+ * medido, sus backends van hasta 3 slots (~1,2 s) desfasados entre sí. Si la
+ * lectura caía en un nodo atrasado, la ATA recién creada "no existía", el saldo
+ * salía 0 y el faucet devolvía 502 después de haber acuñado de verdad.
+ *
+ * `minContextSlot` es el mecanismo exacto para esto: el RPC prefiere fallar con
+ * -32016 antes que contestar con datos anteriores a ese slot. Un nodo atrasado
+ * deja de ser un cero silencioso y pasa a ser un "todavía no" que se reintenta.
+ */
+async function balancesAtSlot(
+  connection: Connection,
+  atas: PublicKey[],
+  minContextSlot: number
+): Promise<(bigint | null)[]> {
+  const infos = await connection.getMultipleAccountsInfo(atas, {
+    commitment: "confirmed",
+    minContextSlot,
+  });
+  return infos.map((info, index) => (info ? unpackAccount(atas[index], info).amount : null));
 }
 
 export async function POST(request: Request) {
@@ -116,11 +184,17 @@ export async function POST(request: Request) {
   try {
     faucet = loadFaucetKeypair();
   } catch (err) {
-    // Server misconfiguration: the visitor can do nothing about it, and the
-    // detail stays in the server log.
+    // 🇪🇸 NOTA: este mensaje SÍ sale al cliente. No es un secreto —nombra una
+    // variable de entorno, nada más— y quien despliega necesita leerlo donde
+    // está mirando. Dejarlo solo en el log obligaba a abrir los Runtime Logs
+    // de Vercel para enterarse de que faltaba una variable del panel.
+    const fault = err instanceof FaucetConfigError ? err : null;
     console.error("[faucet] configuration:", err);
     return NextResponse.json(
-      { error: "The faucet is not configured on this deployment." },
+      {
+        error: fault?.message ?? "The faucet is not configured on this deployment.",
+        reason: fault?.reason ?? "unknown",
+      },
       { status: 500 }
     );
   }
@@ -166,26 +240,63 @@ export async function POST(request: Request) {
       );
     }
 
-    const signature = await sendAndConfirmTransaction(connection, transaction, [faucet], {
-      commitment: "confirmed",
+    // 🇪🇸 NOTA: send + confirm por separado, en vez de
+    // `sendAndConfirmTransaction`, por una sola razón: así tenemos el SLOT de
+    // la confirmación, que es lo que hace verificable la lectura siguiente.
+    const latest = await connection.getLatestBlockhash("confirmed");
+    transaction.recentBlockhash = latest.blockhash;
+    transaction.feePayer = faucet.publicKey;
+    transaction.sign(faucet);
+
+    const signature = await connection.sendRawTransaction(transaction.serialize(), {
+      preflightCommitment: "confirmed",
     });
+    const confirmation = await connection.confirmTransaction(
+      { signature, ...latest },
+      "confirmed"
+    );
+    if (confirmation.value.err) {
+      throw new Error(
+        `Transaction ${signature} failed on chain: ${JSON.stringify(confirmation.value.err)}`
+      );
+    }
+    const minContextSlot = confirmation.context.slot;
 
     // ── 4. Comprobar el resultado, no darlo por hecho ───────────────────────
     // 🇪🇸 NOTA: que la llamada vuelva sin excepción NO es que los tokens estén
-    // ahí. Se releen los saldos y se exige el delta exacto; si no cuadra, esto
-    // no es un 200. Ya nos pasó en el paso 1 de esta fase con un curl que no
-    // miraba su propio status.
-    const after = await Promise.all(atas.map((ata) => balanceOf(connection, ata)));
-    const shortfall = drops.filter(
-      (drop: Drop, index: number) => after[index] - held[index] !== drop.base
-    );
-    if (shortfall.length > 0) {
+    // ahí. Se releen los saldos y se exige el delta exacto. Lo que cambió tras
+    // el bug del paso 4 es de DÓNDE se leen: de un nodo que haya alcanzado el
+    // slot de la confirmación, reintentando mientras no lo haya.
+    const deadline = Date.now() + VERIFY_TIMEOUT_MS;
+    let after: (bigint | null)[] = atas.map(() => null);
+    let attempts = 0;
+    let settled = false;
+
+    for (;;) {
+      attempts++;
+      try {
+        after = await balancesAtSlot(connection, atas, minContextSlot);
+        settled = drops.every(
+          (drop: Drop, index: number) =>
+            after[index] !== null && after[index]! - held[index] === drop.base
+        );
+        if (settled) break;
+      } catch (err) {
+        // Un nodo por detrás del slot no es un fallo: es "todavía no".
+        if (!isBehind(err)) throw err;
+      }
+      if (Date.now() >= deadline) break;
+      await sleep(VERIFY_POLL_MS);
+    }
+
+    if (!settled) {
       console.error(
-        `[faucet] ${signature} confirmed but balances did not move as promised`,
+        `[faucet] ${signature} confirmed at slot ${minContextSlot} but balances did not ` +
+          `move as promised after ${attempts} reads`,
         drops.map((drop, index) => ({
           symbol: drop.symbol,
           expected: drop.base.toString(),
-          actual: (after[index] - held[index]).toString(),
+          actual: after[index] === null ? "account not visible" : (after[index]! - held[index]).toString(),
         }))
       );
       return NextResponse.json(
@@ -202,12 +313,16 @@ export async function POST(request: Request) {
     return NextResponse.json({
       signature,
       recipient: recipient.toBase58(),
+      // 🇪🇸 NOTA: el slot viaja al cliente para que el refresco de saldos del
+      // navegador pueda exigir el mismo mínimo. Sin él, el frontend repetiría
+      // la carrera que este handler acaba de ganar.
+      slot: minContextSlot,
       amounts: drops.map((drop, index) => ({
         symbol: drop.symbol,
         mint: drop.mint,
         decimals: drop.decimals,
         baseUnits: drop.base.toString(),
-        balance: after[index].toString(),
+        balance: after[index]!.toString(),
       })),
     });
   } catch (err) {

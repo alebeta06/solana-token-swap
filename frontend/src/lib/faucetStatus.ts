@@ -28,6 +28,14 @@ export interface FaucetOutcome {
   message: string;
   /** Present when there is a transaction worth linking to the explorer. */
   signature?: string;
+  /**
+   * The slot the mint confirmed at.
+   *
+   * 🇪🇸 NOTA: viaja hasta el hook de saldos para que su lectura exija ese
+   * mínimo. Sin él, el navegador repite la carrera contra el RPC que el
+   * handler acaba de ganar, y el panel enseña 0 justo después de recibir.
+   */
+  slot?: number;
 }
 
 interface AmountPayload {
@@ -63,6 +71,18 @@ function readString(body: unknown, key: string): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
+function readNumber(body: unknown, key: string): number | undefined {
+  const value = (body as Record<string, unknown> | null | undefined)?.[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+/** Each configuration fault needs a different thing from whoever deployed this. */
+const CONFIG_TITLES: Record<string, string> = {
+  missing: "No faucet key configured",
+  malformed: "The faucet key is malformed",
+  mismatch: "The faucet key does not match this deployment",
+};
+
 export function describeFaucetResponse(status: number, body: unknown): FaucetOutcome {
   const signature = readString(body, "signature");
 
@@ -75,6 +95,7 @@ export function describeFaucetResponse(status: number, body: unknown): FaucetOut
         ? `${amounts} are now in your wallet. You can swap them below.`
         : "The demo tokens are now in your wallet. You can swap them below.",
       signature,
+      slot: readNumber(body, "slot"),
     };
   }
 
@@ -111,12 +132,18 @@ export function describeFaucetResponse(status: number, body: unknown): FaucetOut
   }
 
   if (status === 500) {
+    // 🇪🇸 NOTA: el motivo lo manda el servidor y se muestra tal cual. No es un
+    // secreto —nombra una variable de entorno— y es lo único accionable que hay
+    // en toda la respuesta. Quien despliega lo lee donde está mirando, en vez
+    // de tener que abrir los Runtime Logs de Vercel.
+    const reason = readString(body, "reason");
     return {
       tone: "error",
-      title: "The faucet is not available here",
+      title: (reason && CONFIG_TITLES[reason]) ?? "The faucet is not available here",
       message:
+        readString(body, "error") ??
         "This deployment has no faucet key configured, so nobody can request tokens. " +
-        "That is a server-side problem, not something you can fix.",
+          "That is a server-side problem, not something you can fix.",
     };
   }
 
