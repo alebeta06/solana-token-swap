@@ -43,5 +43,10 @@
   "createdAt": "2026-09-15T22:28:56.157Z",
   "seededAt": "2026-09-16T01:18:06.913Z",
   "metadataUploadedAt": "2026-09-18T05:33:08.403Z",
-  "metadataCreatedAt": "2026-09-18T05:33:12.779Z"
+  "metadataCreatedAt": "2026-09-18T05:33:12.779Z",
+  "faucet": {
+    "pubkey": "GTxTmFKt58JTTAVohkSM9aKfiFsz2atoo7GEPfFMmik2",
+    "fundedSol": 0.5,
+    "authorityTransferredAt": "2026-09-18T19:57:40.780Z"
+  }
 }
