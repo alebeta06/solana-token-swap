@@ -30,6 +30,12 @@ export interface DevnetManifest {
   };
   createdAt: string;
   seededAt: string;
+  /** Written by scripts/transfer-mint-authority.ts. The pubkey, never the key. */
+  faucet?: {
+    pubkey: string;
+    fundedSol: number;
+    authorityTransferredAt: string;
+  };
 }
 
 export const manifest = manifestJson as DevnetManifest;
