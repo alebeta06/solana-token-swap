@@ -49,13 +49,22 @@ import {
 // serviría la firma de otro visitante.
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+/** Room for confirmation + verification. Vercel caps this per plan; see the README. */
+export const maxDuration = 30;
 
-/** How long to keep asking for a read that reflects the mint before giving up. */
-const VERIFY_TIMEOUT_MS = 15_000;
-const VERIFY_POLL_MS = 400;
+/** How long to wait for the transaction to confirm, and then for a read of it. */
+const CONFIRM_TIMEOUT_MS = 10_000;
+const VERIFY_TIMEOUT_MS = 5_000;
+const POLL_MS = 400;
 
 /** JSON-RPC code for "this node has not reached the slot you asked for". */
 const SLOT_NOT_REACHED = -32016;
+
+/** What happened to a transaction we sent. */
+type Landing =
+  | { status: "confirmed"; slot: number }
+  | { status: "failed"; detail: string }
+  | { status: "unconfirmed" };
 
 type ConfigFault = "missing" | "malformed" | "mismatch";
 
@@ -142,9 +151,10 @@ function isBehind(err: unknown): boolean {
 /**
  * Balances read from a node that has AT LEAST reached `minContextSlot`.
  *
- * 🔴 Aquí estaba el bug del paso 4. `confirmTransaction` se entera por
- * WebSocket en cuanto el nodo que confirmó la ve, pero la lectura siguiente es
- * una petición HTTP nueva, y el endpoint público de devnet es un balanceador:
+ * 🔴 La segunda carrera del paso 4 (la primera era la confirmación por
+ * WebSocket — ver `awaitLanding`). La confirmación llega de un nodo concreto,
+ * pero la lectura siguiente es una petición HTTP nueva, y el endpoint público
+ * de devnet es un balanceador:
  * medido, sus backends van hasta 3 slots (~1,2 s) desfasados entre sí. Si la
  * lectura caía en un nodo atrasado, la ATA recién creada "no existía", el saldo
  * salía 0 y el faucet devolvía 502 después de haber acuñado de verdad.
@@ -163,6 +173,55 @@ async function balancesAtSlot(
     minContextSlot,
   });
   return infos.map((info, index) => (info ? unpackAccount(atas[index], info).amount : null));
+}
+
+/**
+ * Waits for the transaction to land, WITHOUT a WebSocket subscription.
+ *
+ * 🔴 Aquí estaba el bug de verdad. `connection.confirmTransaction` confirma
+ * suscribiéndose por WebSocket con `signatureSubscribe`, y **no todos los RPC
+ * lo exponen**: el de Alchemy de este proyecto responde
+ * `-32601 Method 'signatureSubscribe' not found`. La librería reintenta, agota
+ * el plazo y lanza `TransactionExpiredBlockheightExceededError` — pero el mint
+ * YA se había ejecutado, así que los tokens llegaban y el endpoint devolvía 502
+ * a los 27 segundos.
+ *
+ * `getSignatureStatuses` es HTTP y lo soporta cualquier RPC. Se sondea hasta
+ * que la firma aparece confirmada, hasta que el blockhash caduca (y entonces la
+ * transacción ya no puede entrar), o hasta agotar el plazo — y ese último caso
+ * se devuelve como "no lo sé", que no es lo mismo que "falló".
+ */
+async function awaitLanding(
+  connection: Connection,
+  signature: string,
+  lastValidBlockHeight: number
+): Promise<Landing> {
+  const deadline = Date.now() + CONFIRM_TIMEOUT_MS;
+
+  for (;;) {
+    const { value } = await connection.getSignatureStatuses([signature]);
+    const status = value[0];
+
+    if (status) {
+      if (status.err) {
+        return { status: "failed", detail: JSON.stringify(status.err) };
+      }
+      if (status.confirmationStatus === "confirmed" || status.confirmationStatus === "finalized") {
+        return { status: "confirmed", slot: status.slot };
+      }
+    }
+
+    if (Date.now() >= deadline) return { status: "unconfirmed" };
+
+    // 🇪🇸 NOTA: si la altura de bloque pasa de `lastValidBlockHeight` sin que la
+    // firma aparezca, la transacción ya no puede incluirse. Eso sí es un fallo
+    // definitivo, y esperar más solo alarga el 502.
+    if ((await connection.getBlockHeight("confirmed")) > lastValidBlockHeight && !status) {
+      return { status: "failed", detail: "blockhash expired before the transaction landed" };
+    }
+
+    await sleep(POLL_MS);
+  }
 }
 
 export async function POST(request: Request) {
@@ -251,16 +310,34 @@ export async function POST(request: Request) {
     const signature = await connection.sendRawTransaction(transaction.serialize(), {
       preflightCommitment: "confirmed",
     });
-    const confirmation = await connection.confirmTransaction(
-      { signature, ...latest },
-      "confirmed"
-    );
-    if (confirmation.value.err) {
-      throw new Error(
-        `Transaction ${signature} failed on chain: ${JSON.stringify(confirmation.value.err)}`
+    const landing = await awaitLanding(connection, signature, latest.lastValidBlockHeight);
+
+    if (landing.status === "failed") {
+      console.error(`[faucet] ${signature} failed on chain: ${landing.detail}`);
+      return NextResponse.json(
+        {
+          error: "The mint did not go through. No tokens were sent, so you can ask again.",
+          signature,
+        },
+        { status: 502 }
       );
     }
-    const minContextSlot = confirmation.context.slot;
+    if (landing.status === "unconfirmed") {
+      // 🔴 Este caso NO es "el mint falló". La transacción puede estar todavía
+      // en vuelo, y decirle a alguien que no se acuñó nada cuando quizá sí es
+      // el error que este endpoint ya cometió una vez.
+      console.error(`[faucet] ${signature} not confirmed within ${CONFIRM_TIMEOUT_MS}ms`);
+      return NextResponse.json(
+        {
+          error:
+            "The mint was sent but could not be confirmed in time. It may still land — " +
+            "check the signature before asking again.",
+          signature,
+        },
+        { status: 504 }
+      );
+    }
+    const minContextSlot = landing.slot;
 
     // ── 4. Comprobar el resultado, no darlo por hecho ───────────────────────
     // 🇪🇸 NOTA: que la llamada vuelva sin excepción NO es que los tokens estén
@@ -286,7 +363,7 @@ export async function POST(request: Request) {
         if (!isBehind(err)) throw err;
       }
       if (Date.now() >= deadline) break;
-      await sleep(VERIFY_POLL_MS);
+      await sleep(POLL_MS);
     }
 
     if (!settled) {

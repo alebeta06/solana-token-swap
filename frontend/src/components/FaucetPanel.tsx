@@ -75,7 +75,7 @@ export function FaucetPanel({
     >
       <p className="font-semibold text-text">Need tokens to try the swap?</p>
       <p className="mt-1 text-muted">
-        The faucet mints demo tokens to your wallet, once per empty wallet.
+        The faucet mints demo tokens to your wallet, once per wallet.
       </p>
 
       <button

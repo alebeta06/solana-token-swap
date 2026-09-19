@@ -72,7 +72,7 @@ describe("describeFaucetResponse", () => {
     expect(outcome.title).toMatch(/connect your wallet/i);
   });
 
-  it("marks only a broken deployment and an unconfirmed mint as errors", () => {
+  it("marks a broken deployment and a failed mint as errors", () => {
     expect(describeFaucetResponse(500, {}).tone).toBe("error");
     expect(describeFaucetResponse(502, {}).tone).toBe("error");
   });
@@ -107,10 +107,35 @@ describe("describeFaucetResponse", () => {
     expect(outcome.message).toBe("Something");
   });
 
-  it("carries the signature of an unconfirmed mint so it can be looked at", () => {
-    const outcome = describeFaucetResponse(502, { error: "...", signature: "abc" });
-    expect(outcome.signature).toBe("abc");
-    expect(outcome.message).toMatch(/explorer/i);
+  it("🔴 never tells a visitor the mint failed when it only could not be confirmed", () => {
+    // El mint puede haberse ejecutado. Decir "no se acuñó nada" manda a pedir
+    // otra vez a quien quizá ya recibió, y entonces le sale un 429 que le
+    // contradice. Es exactamente el par de mensajes que costó un bug.
+    const unconfirmed = describeFaucetResponse(504, {
+      error: "The mint was sent but could not be confirmed in time. It may still land — …",
+      signature: "abc",
+    });
+    expect(unconfirmed.title).toMatch(/could not confirm/i);
+    expect(unconfirmed.title).not.toMatch(/did not go through|failed/i);
+    expect(unconfirmed.message).toMatch(/may still land/i);
+    expect(unconfirmed.signature).toBe("abc");
+  });
+
+  it("says plainly that nothing was minted when the transaction did fail", () => {
+    const failed = describeFaucetResponse(502, {
+      error: "The mint did not go through. No tokens were sent, so you can ask again.",
+      signature: "abc",
+    });
+    expect(failed.title).toMatch(/did not go through/i);
+    expect(failed.message).toMatch(/no tokens were sent/i);
+    expect(failed.signature).toBe("abc");
+  });
+
+  it("keeps 502 and 504 as different outcomes", () => {
+    expect(describeFaucetResponse(502, {}).title).not.toBe(
+      describeFaucetResponse(504, {}).title
+    );
+    expect(describeFaucetResponse(504, {}).tone).toBe("error");
   });
 
   it("handles a status this page does not know instead of rendering nothing", () => {

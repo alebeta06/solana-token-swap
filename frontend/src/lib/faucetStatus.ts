@@ -12,7 +12,8 @@
  *   429 → ya tiene saldo  ámbar   — 🔴 NO es un error: ya tiene lo que pedía
  *   503 → faucet vacío    ámbar   — no es culpa suya, y hay que decírselo
  *   500 → mal configurado rojo    — el despliegue está roto
- *   502 → no confirmó     rojo    — lo único que de verdad deja algo a medias
+ *   502 → el mint falló   rojo    — no se acuñó nada, se puede reintentar
+ *   504 → sin confirmar   rojo    — 🔴 puede haberse acuñado: NO decir que falló
  *
  * 🇪🇸 NOTA: el verde se reserva a "acaba de confirmarse una transacción", que
  * es lo que significa en `TxResult`. El 429 es un estado bueno, pero no acaba
@@ -150,13 +151,26 @@ export function describeFaucetResponse(status: number, body: unknown): FaucetOut
   if (status === 502) {
     return {
       tone: "error",
-      title: "The mint was not confirmed",
-      // 🇪🇸 NOTA: con firma, enlazarla es lo importante: es un caso donde puede
-      // haberse mandado algo y hay que poder mirarlo antes de reintentar.
-      message: signature
-        ? "The transaction was sent but did not land as expected. Check it on the explorer " +
-          "before asking again."
-        : "The faucet could not complete the mint. Try again in a moment.",
+      title: "The mint did not go through",
+      message:
+        readString(body, "error") ??
+        "The faucet could not complete the mint. Try again in a moment.",
+      signature,
+    };
+  }
+
+  if (status === 504) {
+    // 🔴 La distinción que costó un bug: "no pude confirmarlo" NO es "falló".
+    // Los tokens pueden estar ya en la wallet. Decir que no se acuñó nada
+    // manda a pedir otra vez a quien quizá ya ha recibido — y entonces se
+    // encuentra un 429 que le contradice.
+    return {
+      tone: "error",
+      title: "Could not confirm the mint",
+      message:
+        readString(body, "error") ??
+        "The mint was sent but could not be confirmed in time. It may still land — check " +
+          "the signature before asking again.",
       signature,
     };
   }
