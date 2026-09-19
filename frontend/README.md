@@ -12,7 +12,8 @@ yarn dev            # http://localhost:3000
 
 Optional `.env.local` (see `.env.local.example`): `NEXT_PUBLIC_RPC_URL` for a
 dedicated devnet RPC. Without it the app uses `clusterApiUrl("devnet")`, which is
-rate-limited but enough for a demo.
+rate-limited but enough for a demo. ⚠️ Si pones uno propio, lee **"Requisitos del
+RPC"** más abajo: no hace falta WebSocket, y eso no es casualidad.
 
 Para que el faucet funcione en local hace falta además `FAUCET_KEYPAIR` — ver
 "El faucet" más abajo. Sin ella la web va entera menos `/api/faucet`, que
@@ -71,15 +72,16 @@ src/
     rpc.ts       el endpoint RPC, resuelto una vez para servidor y navegador
     faucet.ts    🔴 la política del faucet, sin red                (faucet.test.ts)
     faucetStatus.ts  qué significa cada respuesta del faucet    (faucetStatus.test.ts)
+    confirm.ts   🔴 confirmar sin WebSocket, sondeando           (confirm.test.ts)
     market.ts    🔴 símbolo ↔ A/B y dirección del swap          (market.test.ts)
     units.ts     unidades base ↔ display, todo en bigint        (units.test.ts)
     quote.ts     la aritmética del programa, en el cliente      (quote.test.ts)
     program.ts   PDAs derivados + handle de Anchor
     swap.ts      las dos instrucciones de swap
-    errors.ts    código de error de Anchor → una frase útil
+    errors.ts    código de error de Anchor → una frase útil     (errors.test.ts)
 ```
 
-`yarn test` (vitest, 55 tests) cubre los cinco módulos puros. No tocan la red: la
+`yarn test` (vitest, 76 tests) cubre los módulos sin red. No tocan la red: la
 política del faucet se decide en `faucet.ts` justo para poder probarla sin cadena.
 
 ### 🔴 El mapeo A/B
@@ -111,6 +113,63 @@ el literal antes de aplicarlo. Mismo patrón que `scripts/swap-demo.ts`.
 Wallet Standard y se anuncian solas; el adapter las recoge. `@solana/wallet-adapter-wallets`
 no está instalado a propósito.
 
+## ⚠️ Requisitos del RPC — léelo antes de poner uno propio
+
+**Cualquier RPC de devnet que sirva HTTP vale. Este proyecto NO necesita WebSocket.**
+Si pones el tuyo en `NEXT_PUBLIC_RPC_URL`, esto es lo que tiene que soportar:
+
+| Necesita | Método | Para qué |
+| -------- | ------ | -------- |
+| Sí | `getSignatureStatuses` | Confirmar una transacción sin suscribirse |
+| Sí | `getMultipleAccounts` con `minContextSlot` | Leer saldos sin carreras (ver más abajo) |
+| Sí | `getLatestBlockhash` · `getBlockHeight` · `sendTransaction` · `getAccountInfo` · `getBalance` | Lo básico |
+| **No** | `signatureSubscribe` · `accountSubscribe` | **No se usa en ninguna parte** |
+
+### Por qué está escrito esto
+
+Porque costó un bug entero, y el bug dependía del proveedor, no del código.
+
+`connection.confirmTransaction` de web3.js —y `.rpc()` de Anchor, que lo usa por
+debajo— confirma **suscribiéndose por WebSocket** con `signatureSubscribe`. No todos
+los proveedores lo exponen. Con el endpoint de Alchemy configurado aquí:
+
+```
+Received JSON-RPC error calling `signatureSubscribe`
+error: { code: -32601, message: "Method 'signatureSubscribe' not found" }
+…
+[faucet] mint failed: TransactionExpiredBlockheightExceededError
+POST /api/faucet 502 in 26840ms
+```
+
+La librería reintenta ocho veces, agota el plazo y lanza — **pero el mint ya se había
+ejecutado**. Los tokens llegaban a la wallet y el endpoint devolvía 502 veintisiete
+segundos después. Con el RPC público no pasaba, porque ese sí soporta la suscripción.
+
+**Los dos caminos que mandan transacciones confirman ahora sondeando por HTTP**, con la
+misma función (`src/lib/confirm.ts`):
+
+| Camino | Antes | Ahora |
+| ------ | ----- | ----- |
+| Faucet (servidor) | `confirmTransaction` | `awaitLanding` → `getSignatureStatuses` |
+| Swap (navegador) | `.rpc()` de Anchor | `.transaction()` + firma + `awaitLanding` |
+
+### `confirmed`, no `processed` — decisión, no descuido
+
+Se confirma a `confirmed`. `processed` respondería antes, pero devuelve estado que la
+cadena todavía puede descartar: se daría por buena una transacción que no ocurrió y se
+leerían saldos fantasma. Lo que se ganaría es acotar el doble clic, y eso ya lo acota la
+UI deshabilitando el botón mientras la petición está en vuelo. El peor caso de esperar
+de más es acuñar dos veces unos tokens de prueba que no valen nada; el peor caso de
+`processed` es enseñar un estado que nunca existió. Está escrito en `confirm.ts` y hay
+un test que afirma que `processed` **no** cuenta como confirmado.
+
+### Efecto secundario: los mensajes de error del swap
+
+Mandar la transacción a mano significa que el error ya no llega traducido por Anchor,
+sino crudo del RPC (`custom program error: 0x1775`). `errors.ts` resuelve ese hexadecimal
+contra los códigos generados del IDL, en el mensaje y en los logs del preflight, así que
+el usuario sigue leyendo "The output fell below your minimum" y no un número. Con tests.
+
 ## El faucet — `POST /api/faucet`
 
 Acuña **10 DEMO9 y 20 DEMO6** a la ATA de una wallet que no tenga ninguno de los dos.
@@ -137,43 +196,6 @@ dos ATAs y se exige que el delta sea exactamente el prometido. Si no cuadra, es 
 con la firma para que se pueda mirar. (Viene de un fallo real del paso 1 de esta fase:
 un `curl` de verificación que no miraba su propio status habría dado por bueno un 404.)
 
-### 🔴 Requisitos del RPC — solo HTTP, nada de WebSocket
-
-**Esto es lo que rompió el faucet en la primera prueba real, y afecta al despliegue.**
-
-`connection.confirmTransaction` confirma **suscribiéndose por WebSocket** con
-`signatureSubscribe`, y no todos los proveedores lo exponen. El endpoint de Alchemy
-configurado en este proyecto responde:
-
-```
-Received JSON-RPC error calling `signatureSubscribe`
-error: { code: -32601, message: "Method 'signatureSubscribe' not found" }
-…
-[faucet] mint failed: TransactionExpiredBlockheightExceededError
-POST /api/faucet 502 in 26840ms
-```
-
-La librería reintenta ocho veces, agota el plazo y lanza — **pero el mint ya se había
-ejecutado**. Los tokens llegaban a la wallet y el endpoint devolvía 502 a los 27
-segundos. Con el RPC público no pasaba, porque ese sí soporta la suscripción: el fallo
-dependía del proveedor, no del código.
-
-El handler ya **no usa WebSocket en ningún punto**. Confirma sondeando
-`getSignatureStatuses`, que es HTTP y está en cualquier RPC:
-
-| Necesita | Método | Por qué |
-| -------- | ------ | ------- |
-| Sí | `getSignatureStatuses` | Confirmar sin suscripción |
-| Sí | `getMultipleAccounts` con `minContextSlot` | Leer sin carreras (ver abajo) |
-| Sí | `getLatestBlockhash`, `getBlockHeight`, `sendTransaction`, `getBalance` | Lo básico |
-| **No** | `signatureSubscribe` / `accountSubscribe` | Ya no se usan |
-
-⚠️ **`NEXT_PUBLIC_RPC_URL` afecta también al navegador, y ahí el swap SÍ depende del
-WebSocket:** `src/lib/swap.ts` usa `.rpc()` de Anchor, que confirma igual que lo hacía
-el faucet. Con un RPC sin `signatureSubscribe`, el swap del navegador fallará del mismo
-modo aunque la transacción entre. **Pendiente de arreglar** — no entraba en el alcance
-de este arreglo, pero hay que resolverlo antes de la Fase 9.
-
 ### Plazos
 
 | Etapa | Plazo |
@@ -181,9 +203,9 @@ de este arreglo, pero hay que resolverlo antes de la Fase 9.
 | Confirmación (`getSignatureStatuses`, cada 400 ms) | 10 s |
 | Verificación de saldos (`minContextSlot`, cada 400 ms) | 5 s |
 
-Antes eran 27 segundos hasta el error, casi todo el presupuesto de una función
-serverless. La ruta declara `maxDuration = 30`; **comprobar que el plan de Vercel lo
-permite** antes de desplegar.
+Antes el fallo tardaba **27 segundos** en llegar, casi todo el presupuesto de una
+función serverless. La ruta declara `maxDuration = 30`; **comprobar que el plan de
+Vercel lo permite** antes de desplegar.
 
 ### 🔴 Leer justo después de escribir: `minContextSlot`
 
@@ -352,7 +374,7 @@ la keypair **no está en el repo** y no debe estarlo.
 
 | Comprobación                                        | Estado |
 | --------------------------------------------------- | ------ |
-| `yarn test` — 55 tests (31 + 13 política + 11 estados) | ✅ |
+| `yarn test` — 76 tests                                | ✅ |
 | `yarn typecheck`                                     | ✅ |
 | `yarn build`                                         | ✅ |
 | Comprobación de manifest obsoleto rompe el build     | ✅ (provocada a propósito) |

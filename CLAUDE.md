@@ -654,8 +654,17 @@ trivial dado el historial de incompatibilidades de toolchain (ver "Entorno").
   not found`; la librería reintenta, agota el plazo y lanza
   `TransactionExpiredBlockheightExceededError` **después de que la transacción se haya
   ejecutado**. Confirmar sondeando `getSignatureStatuses` (HTTP) funciona con cualquier
-  proveedor. ⚠️ **`src/lib/swap.ts` sigue expuesto**: usa `.rpc()` de Anchor, que
-  confirma igual. Pendiente antes de la Fase 9.
+  proveedor. Los dos caminos que mandan transacciones —faucet en el servidor y swap en
+  el navegador— confirman ya con `frontend/src/lib/confirm.ts`. **El proyecto no
+  depende de `signatureSubscribe` en ninguna parte**, y `frontend/README.md` documenta
+  qué necesita un RPC para servirlo.
+- **Se confirma a `confirmed`, nunca a `processed`.** `processed` devuelve estado que la
+  cadena puede descartar: se daría por buena una transacción que no ocurrió. El doble
+  clic ya lo acota la UI deshabilitando el botón. Peor caso de esperar: acuñar dos veces
+  unos tokens de prueba. Peor caso de `processed`: enseñar un estado que nunca existió.
+- ⚠️ **Mandar la transacción a mano cuesta los mensajes de error de Anchor.** Sin
+  `.rpc()` el error llega crudo (`custom program error: 0x1775`); `errors.ts` resuelve
+  el hexadecimal contra los códigos generados del IDL, en el mensaje y en los logs.
 - 🔴 **"No pude confirmarlo" no es "falló".** Si el mint pudo ejecutarse, decir que no
   se acuñó nada manda a reintentar a quien ya ha recibido — y entonces le sale un
   "ya tienes tokens" que le contradice. Códigos distintos (502 vs 504) y textos
