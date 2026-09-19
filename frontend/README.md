@@ -66,13 +66,14 @@ src/
   app/          layout, providers (wallet + connection), página única
     api/faucet/   🔴 route handler del faucet — el único sitio con clave privada
   components/   Header · MarketPanel · FaucetPanel · SwapCard · TxResult · Footer
-  hooks/        useMarketState · useTokenBalances · useSolBalance
+  hooks/        useMarketState · useTokenBalances · useSolBalance · useAutoDismiss
   lib/
     manifest.ts  el manifest tipado + la comprobación de obsolescencia
     rpc.ts       el endpoint RPC, resuelto una vez para servidor y navegador
     faucet.ts    🔴 la política del faucet, sin red                (faucet.test.ts)
     faucetStatus.ts  qué significa cada respuesta del faucet    (faucetStatus.test.ts)
     confirm.ts   🔴 confirmar sin WebSocket, sondeando           (confirm.test.ts)
+    banner.ts    qué mensajes se van solos y cuáles no           (banner.test.ts)
     market.ts    🔴 símbolo ↔ A/B y dirección del swap          (market.test.ts)
     units.ts     unidades base ↔ display, todo en bigint        (units.test.ts)
     quote.ts     la aritmética del programa, en el cliente      (quote.test.ts)
@@ -81,7 +82,7 @@ src/
     errors.ts    código de error de Anchor → una frase útil     (errors.test.ts)
 ```
 
-`yarn test` (vitest, 82 tests) cubre los módulos sin red. No tocan la red: la
+`yarn test` (vitest, 90 tests) cubre los módulos sin red. No tocan la red: la
 política del faucet se decide en `faucet.ts` justo para poder probarla sin cadena.
 
 ### 🔴 El mapeo A/B
@@ -348,8 +349,35 @@ El 502 y el 504 son mensajes distintos a propósito: *"no se acuñó nada"* y *"
 que sí"* mandan a hacer cosas contrarias, y confundirlos fue justo el bug que devolvía
 502 sobre un mint que había funcionado.
 
+El banner de éxito se oculta a los 8 s; el de aviso o error se queda. Ver "Los
+banners" más abajo.
+
 `data-testid`: `faucet-panel`, `faucet-submit`, `faucet-status` (con `data-tone`),
 `faucet-tx-link`, `faucet-sol-notice`, `sol-faucet-link`.
+
+### Los banners: los éxitos se van, los errores se quedan
+
+| Banner | Se oculta |
+| ------ | --------- |
+| Éxito (`Confirmed` del swap, `Tokens sent` del faucet) | **sí, a los 8 s** |
+| Error (swap fallido, 500, 502, 504, red caída) | **no** |
+| Aviso (429 "ya tienes tokens", 503 "faucet vacío") | **no** |
+
+Un "Confirmed" que no caduca deja de decir de qué operación habla: a los pocos minutos
+nadie sabe si es de lo que acaba de hacer o de algo anterior, y su enlace manda a una
+firma vieja. Ocho segundos dan para leerlo y pulsar el enlace.
+
+Un error es la **única** explicación de lo que pasó. Borrarlo solo deja sin ella a quien
+en ese momento estaba mirando su wallet. Los avisos del faucet cuentan como los errores:
+no son fallos, pero responden a "¿por qué no ha pasado nada?".
+
+**El estado se limpia al arrancar la operación siguiente**, no con un temporizador
+(`SwapCard` pone firma y error a `null` al pulsar Swap; `FaucetPanel` hace lo mismo con
+su resultado). Así nunca hay dos mensajes en pantalla que hablen de cosas distintas.
+
+La regla y el plazo viven en `src/lib/banner.ts`, con tests que comprueban que el éxito
+se oculta al cumplirse el plazo y **no antes**, y que un error sigue ahí después de una
+hora simulada.
 
 ### Límites conocidos de la verificación
 
@@ -441,7 +469,7 @@ la keypair **no está en el repo** y no debe estarlo.
 
 | Comprobación                                        | Estado |
 | --------------------------------------------------- | ------ |
-| `yarn test` — 82 tests                                | ✅ |
+| `yarn test` — 90 tests                                | ✅ |
 | `yarn typecheck`                                     | ✅ |
 | `yarn build`                                         | ✅ |
 | Comprobación de manifest obsoleto rompe el build     | ✅ (provocada a propósito) |
