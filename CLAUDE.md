@@ -204,10 +204,53 @@ supply/decimals/mint authority/freeze authority; para programas ownership y meta
 para transacciones sus instrucciones y resultados en secuencia. Los fallos vienen en
 `errors[]`: `NOT_FOUND` y `CURRENTLY_UNSUPPORTED`.
 
+### Cómo se llama (los dos puntos que rompen una consulta)
+
+1. 🔴 **Pasar `cluster: "devnet"` SIEMPRE, explícitamente.** El parámetro tiene
+   `default: "mainnet-beta"`, donde no existe nada de este proyecto. Omitirlo no da
+   error: da `NOT_FOUND`, que se lee como "esa cuenta no existe" cuando lo que pasa es
+   que se preguntó a la red equivocada.
+2. 🔴 **Leer `errors[]` en cada respuesta**, aunque venga `payload`:
+   - `NOT_FOUND` — no existe **en ese cluster**. Antes de concluir nada, comprobar que
+     el cluster era el correcto. Y ojo: el MCP hereda los huecos del nodo que tenga
+     detrás, así que también sale `NOT_FOUND` cuando la entidad existe pero su nodo no
+     la tiene. Verificado en la evaluación con una firma que `getSignaturesForAddress`
+     sí lista y que el RPC público tampoco resuelve.
+   - `CURRENTLY_UNSUPPORTED` — reconoce el tipo de cuenta pero no sabe decodificarla.
+     **Es una respuesta, no un fallo.**
+
 ⚠️ **Cubre `mainnet-beta`, `devnet` y `testnet` — y nada más.** No alcanza
 `solana-test-validator` ni LiteSVM, así que **durante los tests locales no sirve**: ahí
 la fuente es el validador y el propio `anchor test`. Aplica **sobre lo desplegado en
 devnet** — el criterio es el cluster, no la fase.
+
+### Qué hace bien y qué NO (medido, 9 consultas, 2026-09-18)
+
+Evaluación con las direcciones de `devnet.json`. Detalle en la conversación; resumen
+operativo:
+
+**Acierta:** `MarketAccount` decodificado campo a campo con los valores correctos
+—incluidos los tres bumps, verificados aparte con `findProgramAddressSync`— porque el
+IDL está publicado on-chain en el **program-metadata program** (`idl.source: "pmp"`),
+no porque se lo demos. Instrucciones decodificadas con sus cuentas nombradas. Los dos
+CPIs de un swap con **las autoridades correctas y distintas**: la wallet firma la
+entrada, el PDA del mercado la salida. Mints completos. Programas con
+`upgrade_authority` y `verification.status` (hoy `unverified` — eso cambia en Fase 9).
+
+**Cuatro huecos que hay que suplir por otra vía:**
+
+1. **Las token accounts NO traen saldo.** Ni las bóvedas ni las ATAs: devuelve
+   `mint`, `owner` y `token_program`, nunca `amount`. Para saldos, `getTokenAccountBalance`.
+2. **Los eventos `emit!` no se decodifican**, aunque las instrucciones del mismo IDL sí.
+   Quedan como `Program data: <base64>` en los logs.
+3. **Metaplex Token Metadata no se decodifica:** devuelve `{"kind":"unknown"}` vacío y
+   `errors: []` — falla en silencio, sin `CURRENTLY_UNSUPPORTED`.
+4. **`kind: "unknown"` en cuentas que sí decodifica** (el propio `MarketAccount`). No
+   enrutar por `kind`: mirar si hay `decoded`.
+
+**Y no deriva nada.** Solo mira direcciones que ya tienes: no acepta seeds, no calcula
+PDAs, no sabe que DEMO9 es el token A *de este despliegue* (eso vive en el manifest) y
+no computa `min_amount_out`. Eso sigue siendo nuestro.
 
 **No confundir los dos MCPs de Solana:** `mcp.solana.com` responde *cómo se construye*
 (documentación + `program_autofixer`); `explorer.solana.com/mcp` responde *qué existe
