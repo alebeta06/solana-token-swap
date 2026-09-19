@@ -649,6 +649,17 @@ trivial dado el historial de incompatibilidades de toolchain (ver "Entorno").
   ocultó durante todo el paso 3 de la Fase 8 un bug que devolvía 502 después de acuñar
   bien. Aplica a cualquier prueba con efectos: el ledger de los tests (`rm -rf
   test-ledger`) es el mismo principio.
+- 🔴 **`confirmTransaction` de web3.js confirma por WebSocket (`signatureSubscribe`) y
+  no todos los RPC lo exponen.** El de Alchemy de este proyecto responde `-32601 Method
+  not found`; la librería reintenta, agota el plazo y lanza
+  `TransactionExpiredBlockheightExceededError` **después de que la transacción se haya
+  ejecutado**. Confirmar sondeando `getSignatureStatuses` (HTTP) funciona con cualquier
+  proveedor. ⚠️ **`src/lib/swap.ts` sigue expuesto**: usa `.rpc()` de Anchor, que
+  confirma igual. Pendiente antes de la Fase 9.
+- 🔴 **"No pude confirmarlo" no es "falló".** Si el mint pudo ejecutarse, decir que no
+  se acuñó nada manda a reintentar a quien ya ha recibido — y entonces le sale un
+  "ya tienes tokens" que le contradice. Códigos distintos (502 vs 504) y textos
+  distintos.
 - 🔴 **En Solana, leer justo después de escribir necesita `minContextSlot`.** El RPC
   público es un balanceador: sus backends van desfasados entre sí (medido: ~1,2 s en
   devnet), así que la lectura posterior a una confirmación puede caer en un nodo que aún

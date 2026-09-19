@@ -128,13 +128,62 @@ curl -X POST http://localhost:3000/api/faucet \
 | 400 | La dirección falta, no es base58 válido, o es una PDA |
 | 429 | Esa wallet ya tiene saldo de alguno de los dos tokens |
 | 500 | `FAUCET_KEYPAIR` ausente, mal formada, o de otra clave — con `reason` |
-| 502 | La transacción no confirmó, o confirmó sin mover los saldos |
+| 502 | El mint **falló**: no se acuñó nada y se puede volver a pedir |
 | 503 | El faucet se quedó sin SOL |
+| 504 | Se mandó pero **no se pudo confirmar** a tiempo — puede haber llegado |
 
 El 200 **no se devuelve por optimismo**: tras confirmar la transacción se releen las
 dos ATAs y se exige que el delta sea exactamente el prometido. Si no cuadra, es un 502
 con la firma para que se pueda mirar. (Viene de un fallo real del paso 1 de esta fase:
 un `curl` de verificación que no miraba su propio status habría dado por bueno un 404.)
+
+### 🔴 Requisitos del RPC — solo HTTP, nada de WebSocket
+
+**Esto es lo que rompió el faucet en la primera prueba real, y afecta al despliegue.**
+
+`connection.confirmTransaction` confirma **suscribiéndose por WebSocket** con
+`signatureSubscribe`, y no todos los proveedores lo exponen. El endpoint de Alchemy
+configurado en este proyecto responde:
+
+```
+Received JSON-RPC error calling `signatureSubscribe`
+error: { code: -32601, message: "Method 'signatureSubscribe' not found" }
+…
+[faucet] mint failed: TransactionExpiredBlockheightExceededError
+POST /api/faucet 502 in 26840ms
+```
+
+La librería reintenta ocho veces, agota el plazo y lanza — **pero el mint ya se había
+ejecutado**. Los tokens llegaban a la wallet y el endpoint devolvía 502 a los 27
+segundos. Con el RPC público no pasaba, porque ese sí soporta la suscripción: el fallo
+dependía del proveedor, no del código.
+
+El handler ya **no usa WebSocket en ningún punto**. Confirma sondeando
+`getSignatureStatuses`, que es HTTP y está en cualquier RPC:
+
+| Necesita | Método | Por qué |
+| -------- | ------ | ------- |
+| Sí | `getSignatureStatuses` | Confirmar sin suscripción |
+| Sí | `getMultipleAccounts` con `minContextSlot` | Leer sin carreras (ver abajo) |
+| Sí | `getLatestBlockhash`, `getBlockHeight`, `sendTransaction`, `getBalance` | Lo básico |
+| **No** | `signatureSubscribe` / `accountSubscribe` | Ya no se usan |
+
+⚠️ **`NEXT_PUBLIC_RPC_URL` afecta también al navegador, y ahí el swap SÍ depende del
+WebSocket:** `src/lib/swap.ts` usa `.rpc()` de Anchor, que confirma igual que lo hacía
+el faucet. Con un RPC sin `signatureSubscribe`, el swap del navegador fallará del mismo
+modo aunque la transacción entre. **Pendiente de arreglar** — no entraba en el alcance
+de este arreglo, pero hay que resolverlo antes de la Fase 9.
+
+### Plazos
+
+| Etapa | Plazo |
+| ----- | ----- |
+| Confirmación (`getSignatureStatuses`, cada 400 ms) | 10 s |
+| Verificación de saldos (`minContextSlot`, cada 400 ms) | 5 s |
+
+Antes eran 27 segundos hasta el error, casi todo el presupuesto de una función
+serverless. La ruta declara `maxDuration = 30`; **comprobar que el plan de Vercel lo
+permite** antes de desplegar.
 
 ### 🔴 Leer justo después de escribir: `minContextSlot`
 
@@ -185,7 +234,9 @@ traducción vive en `src/lib/faucetStatus.ts` —sin red, con tests— no en el 
 | 429 | ámbar `#F5A623` | You already have tokens | 🔴 **No es un error.** Ya tiene lo que venía a pedir |
 | 503 | ámbar `#F5A623` | The faucet is empty | No es culpa suya, y el texto lo dice |
 | 400 | ámbar `#F5A623` | Connect your wallet first | Le falta un paso, no ha fallado nada |
-| 500 · 502 · sin respuesta | rojo `#FF5C5C` | | Lo único que de verdad está roto |
+| 502 | rojo `#FF5C5C` | The mint did not go through | No se acuñó nada; puede volver a pedir |
+| 504 | rojo `#FF5C5C` | Could not confirm the mint | 🔴 **No dice que falló:** puede haber llegado |
+| 500 · sin respuesta | rojo `#FF5C5C` | | El despliegue o la red están rotos |
 
 **El rojo se reserva a lo que está roto.** Un 429 en rojo, junto a los demás, haría
 parecer averiado un faucet que funciona perfectamente: el mensaje va en positivo y sin
@@ -204,11 +255,17 @@ SOL, y sin SOL el swap falla al firmar. Enseñarlo después del 200 sería tarde
 entonces ya ha pulsado Swap y ha visto un error que no entiende. Lleva enlace a
 `faucet.solana.com` y el comando de CLI.
 
+El 502 y el 504 son mensajes distintos a propósito: *"no se acuñó nada"* y *"puede
+que sí"* mandan a hacer cosas contrarias, y confundirlos fue justo el bug que devolvía
+502 sobre un mint que había funcionado.
+
 `data-testid`: `faucet-panel`, `faucet-submit`, `faucet-status` (con `data-tone`),
 `faucet-tx-link`, `faucet-sol-notice`, `sol-faucet-link`.
 
 ### Límites conocidos de la verificación
 
+- **El 504 (sin confirmar a tiempo) no se ha provocado a propósito.** Su renderizado sí
+  tiene test, incluida la afirmación de que no dice que el mint falló.
 - **El 200 y el 429 del servidor sí están ejercitados contra devnet**; los tres 500
   también, uno por cada fallo de configuración (variable ausente, contenido que no es
   una keypair, y una keypair válida que no es la del faucet).
