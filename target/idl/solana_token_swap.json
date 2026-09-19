@@ -1,0 +1,853 @@
+{
+  "address": "BJ7GHy1zRe1VKuKUZU2ac2q1VQmtukmHzCpbo98m21qp",
+  "metadata": {
+    "name": "solana_token_swap",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "Created with Anchor"
+  },
+  "instructions": [
+    {
+      "name": "add_liquidity",
+      "docs": [
+        "Deposits tokens into the market vaults. Open to any depositor.",
+        "🇪🇸 NOTA: no lleva `has_one = authority` — cualquiera puede aportar liquidez.",
+        "Regalar tokens a una bóveda no hace daño: nadie puede sacarlos salvo por swap."
+      ],
+      "discriminator": [
+        181,
+        157,
+        89,
+        67,
+        143,
+        182,
+        52,
+        72
+      ],
+      "accounts": [
+        {
+          "name": "market",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market.token_mint_a",
+                "account": "MarketAccount"
+              },
+              {
+                "kind": "account",
+                "path": "market.token_mint_b",
+                "account": "MarketAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault_a",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116,
+                  95,
+                  97
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault_b",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116,
+                  95,
+                  98
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "depositor_token_a",
+          "docs": [
+            "🇪🇸 NOTA: ATA del depositante. El `constraint` impide que pase una cuenta",
+            "de otro token — el caller elige las cuentas, así que hay que verificar."
+          ],
+          "writable": true
+        },
+        {
+          "name": "depositor_token_b",
+          "writable": true
+        },
+        {
+          "name": "depositor",
+          "signer": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount_a",
+          "type": "u64"
+        },
+        {
+          "name": "amount_b",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "initialize_market",
+      "docs": [
+        "Creates a market for a token pair, plus its two vaults."
+      ],
+      "discriminator": [
+        35,
+        35,
+        189,
+        193,
+        155,
+        48,
+        170,
+        203
+      ],
+      "accounts": [
+        {
+          "name": "market",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "token_mint_a"
+              },
+              {
+                "kind": "account",
+                "path": "token_mint_b"
+              }
+            ]
+          }
+        },
+        {
+          "name": "token_mint_a"
+        },
+        {
+          "name": "token_mint_b"
+        },
+        {
+          "name": "vault_a",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116,
+                  95,
+                  97
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault_b",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116,
+                  95,
+                  98
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "set_price",
+      "docs": [
+        "Updates the exchange price. Only the market authority may call this."
+      ],
+      "discriminator": [
+        16,
+        19,
+        182,
+        8,
+        149,
+        83,
+        72,
+        181
+      ],
+      "accounts": [
+        {
+          "name": "market",
+          "docs": [
+            "🇪🇸 NOTA: `has_one` y `Signer` juntos equivalen a",
+            "`require(msg.sender == market.authority)` de Solidity.",
+            "Por separado no valen nada: `has_one` sin `Signer` dejaría que cualquiera",
+            "pase la pubkey del authority sin demostrar que la controla."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market.token_mint_a",
+                "account": "MarketAccount"
+              },
+              {
+                "kind": "account",
+                "path": "market.token_mint_b",
+                "account": "MarketAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "authority",
+          "signer": true,
+          "relations": [
+            "market"
+          ]
+        }
+      ],
+      "args": [
+        {
+          "name": "price",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "swap_a_to_b",
+      "docs": [
+        "Swaps token A for token B at the market's fixed price."
+      ],
+      "discriminator": [
+        57,
+        5,
+        83,
+        157,
+        173,
+        236,
+        126,
+        96
+      ],
+      "accounts": [
+        {
+          "name": "market",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market.token_mint_a",
+                "account": "MarketAccount"
+              },
+              {
+                "kind": "account",
+                "path": "market.token_mint_b",
+                "account": "MarketAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault_a",
+          "docs": [
+            "🇪🇸 NOTA: estas `seeds` son lo que impide el account confusion. Anchor",
+            "re-deriva la dirección desde market.key() y la compara. Pasar la bóveda",
+            "de otro mercado aborta la instrucción. NO es el Signer quien lo detiene:",
+            "el atacante firma legítimamente su propia transacción."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116,
+                  95,
+                  97
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault_b",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116,
+                  95,
+                  98
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "user_token_a",
+          "writable": true
+        },
+        {
+          "name": "user_token_b",
+          "writable": true
+        },
+        {
+          "name": "user",
+          "signer": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount_in",
+          "type": "u64"
+        },
+        {
+          "name": "min_amount_out",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "swap_b_to_a",
+      "docs": [
+        "Swaps token B for token A at the market's fixed price.",
+        "",
+        "🇪🇸 NOTA: es el espejo de swap_a_to_b, pero NO es copiar y pegar:",
+        "· la bóveda que se drena es vault_a, no vault_b",
+        "· el precio DIVIDE en vez de multiplicar, así que price = 0 es fatal",
+        "· la entrada va a vault_b y la salida sale de vault_a"
+      ],
+      "discriminator": [
+        171,
+        201,
+        74,
+        104,
+        102,
+        128,
+        36,
+        162
+      ],
+      "accounts": [
+        {
+          "name": "market",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market.token_mint_a",
+                "account": "MarketAccount"
+              },
+              {
+                "kind": "account",
+                "path": "market.token_mint_b",
+                "account": "MarketAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault_a",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116,
+                  95,
+                  97
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault_b",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116,
+                  95,
+                  98
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "user_token_a",
+          "writable": true
+        },
+        {
+          "name": "user_token_b",
+          "writable": true
+        },
+        {
+          "name": "user",
+          "signer": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount_in",
+          "type": "u64"
+        },
+        {
+          "name": "min_amount_out",
+          "type": "u64"
+        }
+      ]
+    }
+  ],
+  "accounts": [
+    {
+      "name": "MarketAccount",
+      "discriminator": [
+        201,
+        78,
+        187,
+        225,
+        240,
+        198,
+        201,
+        251
+      ]
+    }
+  ],
+  "events": [
+    {
+      "name": "LiquidityAdded",
+      "discriminator": [
+        154,
+        26,
+        221,
+        108,
+        238,
+        64,
+        217,
+        161
+      ]
+    },
+    {
+      "name": "MarketInitialized",
+      "discriminator": [
+        134,
+        160,
+        122,
+        87,
+        50,
+        3,
+        255,
+        81
+      ]
+    },
+    {
+      "name": "PriceSet",
+      "discriminator": [
+        152,
+        186,
+        196,
+        72,
+        117,
+        210,
+        36,
+        160
+      ]
+    },
+    {
+      "name": "SwapExecuted",
+      "discriminator": [
+        150,
+        166,
+        26,
+        225,
+        28,
+        89,
+        38,
+        79
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "ZeroAmount",
+      "msg": "Amount must be greater than zero"
+    },
+    {
+      "code": 6001,
+      "name": "PriceNotSet",
+      "msg": "Price has not been set"
+    },
+    {
+      "code": 6002,
+      "name": "InsufficientLiquidity",
+      "msg": "Insufficient liquidity in vault"
+    },
+    {
+      "code": 6003,
+      "name": "MathOverflow",
+      "msg": "Arithmetic overflow"
+    },
+    {
+      "code": 6004,
+      "name": "ZeroOutput",
+      "msg": "Output amount is zero after truncation"
+    },
+    {
+      "code": 6005,
+      "name": "SlippageExceeded",
+      "msg": "Output below minimum requested"
+    },
+    {
+      "code": 6006,
+      "name": "MintOrder",
+      "msg": "Mints must be in canonical order (mint_a < mint_b)"
+    },
+    {
+      "code": 6007,
+      "name": "Unauthorized",
+      "msg": "Only the market authority can perform this action"
+    },
+    {
+      "code": 6008,
+      "name": "InvalidMint",
+      "msg": "Token account does not match the market mint"
+    }
+  ],
+  "types": [
+    {
+      "name": "LiquidityAdded",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "market",
+            "type": "pubkey"
+          },
+          {
+            "name": "depositor",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount_a",
+            "type": "u64"
+          },
+          {
+            "name": "amount_b",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "MarketAccount",
+      "docs": [
+        "Market state. One account per token pair, addressed by a PDA.",
+        "🇪🇸 NOTA: en Solidity esto sería `mapping(bytes32 => Market)` dentro del contrato.",
+        "Aquí cada mercado es su propia cuenta y la dirección del PDA hace de índice."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "authority",
+            "docs": [
+              "Authority allowed to update the price. Per-market, not per-program."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "token_mint_a",
+            "docs": [
+              "Mint of token A. Canonical order guarantees token_mint_a < token_mint_b."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "token_mint_b",
+            "type": "pubkey"
+          },
+          {
+            "name": "price",
+            "docs": [
+              "Scaled by 10^PRICE_DECIMALS."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "decimals_a",
+            "docs": [
+              "🇪🇸 NOTA: se leen del Mint al crear el mercado, NUNCA del caller."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "decimals_b",
+            "type": "u8"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "vault_a_bump",
+            "type": "u8"
+          },
+          {
+            "name": "vault_b_bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "MarketInitialized",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "market",
+            "type": "pubkey"
+          },
+          {
+            "name": "authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "token_mint_a",
+            "type": "pubkey"
+          },
+          {
+            "name": "token_mint_b",
+            "type": "pubkey"
+          },
+          {
+            "name": "decimals_a",
+            "type": "u8"
+          },
+          {
+            "name": "decimals_b",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PriceSet",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "market",
+            "type": "pubkey"
+          },
+          {
+            "name": "authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "price",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "SwapExecuted",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "market",
+            "type": "pubkey"
+          },
+          {
+            "name": "user",
+            "type": "pubkey"
+          },
+          {
+            "name": "a_to_b",
+            "docs": [
+              "true = A→B, false = B→A"
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "amount_in",
+            "type": "u64"
+          },
+          {
+            "name": "amount_out",
+            "type": "u64"
+          }
+        ]
+      }
+    }
+  ]
+}

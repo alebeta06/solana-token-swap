@@ -1,6 +1,16 @@
 .anchor
 .DS_Store
-target
+# Build artifacts de Anchor. Las tres excepciones están commiteadas a propósito:
+# sin ellas, un clon nuevo no puede correr `yarn typecheck` sin instalar el
+# toolchain de Solana entero. Ver CLAUDE.md, "Artefactos generados commiteados".
+/target/*
+!/target/idl/
+/target/idl/*
+!/target/idl/solana_token_swap.json
+!/target/types/
+/target/types/*
+!/target/types/solana_token_swap.ts
+!/target/types/solana_token_swap_errors.ts
 **/*.rs.bk
 node_modules
 test-ledger

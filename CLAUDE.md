@@ -122,6 +122,34 @@ configuración equivocada y produciendo 141 errores que no eran reales. `skipLib
 tampoco es cosmético: `@metaplex-foundation/umi` publica `.d.ts` que referencian tipos
 que no define, y sin esa opción no compila nada que importe umi.
 
+### ⚠️ Artefactos generados commiteados — hay que regenerarlos a mano
+
+`target/` está en el `.gitignore`, **con tres excepciones que sí están commiteadas:**
+
+```
+target/idl/solana_token_swap.json
+target/types/solana_token_swap.ts
+target/types/solana_token_swap_errors.ts
+```
+
+Sin ellas, quien clone el repo —el evaluador incluido— no puede correr
+`yarn typecheck`: `tests/` y `scripts/` importan `../target/types/solana_token_swap`,
+que lo genera `anchor build`. Con ellas, el repo es autosuficiente para el typecheck
+sin instalar el toolchain de Solana. El IDL va además porque es el artefacto que
+necesita cualquier cliente para hablar con el programa, y porque tener el origen
+permite comprobar que la copia de `frontend/src/idl/` está al día.
+
+🔴 **Tras cualquier cambio en `programs/`: `anchor build` y commitear esos tres
+ficheros regenerados.** Git no avisa de que están atrasados — son ficheros normales,
+no hay hook ni check. Un typecheck en verde contra un IDL viejo **no comprueba nada
+real**: valida el cliente contra un programa que ya no existe. Lo mismo vale para las
+tres copias de `frontend/src/idl/`, que hay que actualizar desde `target/` (`diff` las
+seis para verificarlo).
+
+⚠️ **Nada más de `target/`.** El `.so`, la keypair del programa y los artefactos de
+compilación siguen ignorados. Comprobarlo con
+`git add -A --dry-run | grep target` antes de commitear.
+
 ### ⚠️ Cuándo el IDL se queda atrás
 
 Si el cliente TS falla con `program.methods.X is not a function`, el IDL no incluye la
