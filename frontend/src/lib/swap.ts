@@ -1,11 +1,21 @@
 /**
  * Sends a swap. The only place that calls `swapAToB` / `swapBToA`.
+ *
+ * 🔴 NO se usa `.rpc()` de Anchor. Construye, firma, manda y confirma — y
+ * confirma con `connection.confirmTransaction`, que se suscribe por WebSocket
+ * con `signatureSubscribe`. Los RPC que no exponen esa suscripción (el de
+ * Alchemy de este proyecto, sin ir más lejos) hacen que la espera caduque y
+ * lance **después de que el swap se haya ejecutado**: la transacción entra, el
+ * usuario ve un error y cree que no hizo nada. Es el mismo fallo que tuvo el
+ * faucet. Aquí se manda igual, pero se confirma sondeando por HTTP con
+ * `awaitLanding`, que funciona con cualquier proveedor.
  */
 import type { Connection, PublicKey } from "@solana/web3.js";
 import { BN } from "@anchor-lang/core";
 import { createAssociatedTokenAccountInstruction } from "@solana/spl-token";
 import type { SwapDirection } from "./market";
 import { getProgram, swapAccounts, type AnchorWalletLike } from "./program";
+import { TransactionUnconfirmedError, awaitLanding } from "./confirm";
 
 export interface SwapRequest {
   connection: Connection;
@@ -41,5 +51,31 @@ export async function executeSwap(request: SwapRequest): Promise<string> {
       ? program.methods.swapAToB(...args)
       : program.methods.swapBToA(...args);
 
-  return method.accounts(accounts).preInstructions(preInstructions).rpc();
+  const transaction = await method
+    .accounts(accounts)
+    .preInstructions(preInstructions)
+    .transaction();
+
+  const latest = await connection.getLatestBlockhash("confirmed");
+  transaction.feePayer = wallet.publicKey;
+  transaction.recentBlockhash = latest.blockhash;
+
+  const signed = await wallet.signTransaction(transaction);
+  // 🇪🇸 NOTA: con preflight. Un swap que va a fallar (slippage, liquidez) falla
+  // ANTES de gastar la comisión, y el error trae los logs del programa, que es
+  // de donde `describeError` saca el código de Anchor.
+  const signature = await connection.sendRawTransaction(signed.serialize(), {
+    preflightCommitment: "confirmed",
+  });
+
+  const landing = await awaitLanding(connection, signature, latest.lastValidBlockHeight);
+
+  if (landing.status === "failed") {
+    throw new Error(`The swap did not go through: ${landing.detail}`);
+  }
+  if (landing.status === "unconfirmed") {
+    // 🔴 Puede haber entrado. Quien lo muestre no debe decir que no pasó nada.
+    throw new TransactionUnconfirmedError(signature);
+  }
+  return signature;
 }

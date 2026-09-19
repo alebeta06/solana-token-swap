@@ -10,6 +10,7 @@ import { AmountError, formatAmount, toBaseUnits, toDisplay } from "@/lib/units";
 import { minAmountOut as applySlippage, quote } from "@/lib/quote";
 import { executeSwap } from "@/lib/swap";
 import { describeError } from "@/lib/errors";
+import { TransactionUnconfirmedError } from "@/lib/confirm";
 import { TxResult } from "./TxResult";
 
 const SLIPPAGE_PRESETS = [10, 50, 100]; // basis points: 0.1%, 0.5%, 1%
@@ -121,6 +122,10 @@ export function SwapCard({
       setAmountText("");
       onDone();
     } catch (err) {
+      // 🔴 "No pude confirmarlo" no es "falló": la transacción puede haber
+      // entrado. Se enseña la firma junto al aviso para poder comprobarlo, en
+      // vez de mandar a repetir un swap que quizá ya se hizo.
+      if (err instanceof TransactionUnconfirmedError) setSignature(err.signature);
       setError(describeError(err));
     } finally {
       setSending(false);

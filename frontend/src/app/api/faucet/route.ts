@@ -36,6 +36,7 @@ import {
 } from "@solana/spl-token";
 import { manifest } from "@/lib/manifest";
 import { rpcEndpoint } from "@/lib/rpc";
+import { awaitLanding } from "@/lib/confirm";
 import {
   FaucetInputError,
   decideDrop,
@@ -59,12 +60,6 @@ const POLL_MS = 400;
 
 /** JSON-RPC code for "this node has not reached the slot you asked for". */
 const SLOT_NOT_REACHED = -32016;
-
-/** What happened to a transaction we sent. */
-type Landing =
-  | { status: "confirmed"; slot: number }
-  | { status: "failed"; detail: string }
-  | { status: "unconfirmed" };
 
 type ConfigFault = "missing" | "malformed" | "mismatch";
 
@@ -175,55 +170,6 @@ async function balancesAtSlot(
   return infos.map((info, index) => (info ? unpackAccount(atas[index], info).amount : null));
 }
 
-/**
- * Waits for the transaction to land, WITHOUT a WebSocket subscription.
- *
- * 🔴 Aquí estaba el bug de verdad. `connection.confirmTransaction` confirma
- * suscribiéndose por WebSocket con `signatureSubscribe`, y **no todos los RPC
- * lo exponen**: el de Alchemy de este proyecto responde
- * `-32601 Method 'signatureSubscribe' not found`. La librería reintenta, agota
- * el plazo y lanza `TransactionExpiredBlockheightExceededError` — pero el mint
- * YA se había ejecutado, así que los tokens llegaban y el endpoint devolvía 502
- * a los 27 segundos.
- *
- * `getSignatureStatuses` es HTTP y lo soporta cualquier RPC. Se sondea hasta
- * que la firma aparece confirmada, hasta que el blockhash caduca (y entonces la
- * transacción ya no puede entrar), o hasta agotar el plazo — y ese último caso
- * se devuelve como "no lo sé", que no es lo mismo que "falló".
- */
-async function awaitLanding(
-  connection: Connection,
-  signature: string,
-  lastValidBlockHeight: number
-): Promise<Landing> {
-  const deadline = Date.now() + CONFIRM_TIMEOUT_MS;
-
-  for (;;) {
-    const { value } = await connection.getSignatureStatuses([signature]);
-    const status = value[0];
-
-    if (status) {
-      if (status.err) {
-        return { status: "failed", detail: JSON.stringify(status.err) };
-      }
-      if (status.confirmationStatus === "confirmed" || status.confirmationStatus === "finalized") {
-        return { status: "confirmed", slot: status.slot };
-      }
-    }
-
-    if (Date.now() >= deadline) return { status: "unconfirmed" };
-
-    // 🇪🇸 NOTA: si la altura de bloque pasa de `lastValidBlockHeight` sin que la
-    // firma aparezca, la transacción ya no puede incluirse. Eso sí es un fallo
-    // definitivo, y esperar más solo alarga el 502.
-    if ((await connection.getBlockHeight("confirmed")) > lastValidBlockHeight && !status) {
-      return { status: "failed", detail: "blockhash expired before the transaction landed" };
-    }
-
-    await sleep(POLL_MS);
-  }
-}
-
 export async function POST(request: Request) {
   // ── 1. Entrada: se valida antes de tocar la cadena ────────────────────────
   let recipient: PublicKey;
@@ -310,7 +256,10 @@ export async function POST(request: Request) {
     const signature = await connection.sendRawTransaction(transaction.serialize(), {
       preflightCommitment: "confirmed",
     });
-    const landing = await awaitLanding(connection, signature, latest.lastValidBlockHeight);
+    const landing = await awaitLanding(connection, signature, latest.lastValidBlockHeight, {
+      timeoutMs: CONFIRM_TIMEOUT_MS,
+      pollMs: POLL_MS,
+    });
 
     if (landing.status === "failed") {
       console.error(`[faucet] ${signature} failed on chain: ${landing.detail}`);
