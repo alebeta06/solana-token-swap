@@ -12,6 +12,7 @@
  * `@/lib/faucetStatus`, que no toca la red y tiene tests. Aquí solo se pinta.
  */
 import { useCallback, useState } from "react";
+import { useAutoDismiss } from "@/hooks/useAutoDismiss";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { txUrl, shorten } from "@/lib/explorer";
 import {
@@ -60,6 +61,14 @@ export function FaucetPanel({
       setPending(false);
     }
   }, [publicKey, onFunded]);
+
+  // 🔴 Solo el éxito se va solo. El 429 y el 503 explican por qué no ha pasado
+  // nada, así que se quedan hasta la siguiente operación. Ver `lib/banner.ts`.
+  useAutoDismiss(
+    outcome === null ? null : (outcome.signature ?? outcome.title),
+    outcome?.tone ?? null,
+    () => setOutcome(null)
+  );
 
   const disabled = !publicKey || pending;
   const label = !publicKey

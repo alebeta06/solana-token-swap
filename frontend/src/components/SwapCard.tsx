@@ -11,6 +11,7 @@ import { minAmountOut as applySlippage, quote } from "@/lib/quote";
 import { executeSwap } from "@/lib/swap";
 import { describeError } from "@/lib/errors";
 import { TransactionUnconfirmedError } from "@/lib/confirm";
+import { useAutoDismiss } from "@/hooks/useAutoDismiss";
 import { TxResult } from "./TxResult";
 
 const SLIPPAGE_PRESETS = [10, 50, 100]; // basis points: 0.1%, 0.5%, 1%
@@ -34,6 +35,15 @@ export function SwapCard({
   const [sending, setSending] = useState(false);
   const [signature, setSignature] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // 🔴 El "Confirmed" se oculta a los 8 s; el error NO. Un banner de éxito que
+  // no caduca deja de decir de qué operación habla. Ver `lib/banner.ts`.
+  //
+  // 🇪🇸 NOTA: si la firma es de un swap que no se pudo confirmar, el error que
+  // la acompaña manda y el banner se queda: no se oculta la mitad del mensaje.
+  useAutoDismiss(signature, signature && error === null ? "success" : null, () =>
+    setSignature(null)
+  );
 
   const from = market.bySymbol(fromSymbol);
   const to = market.counterpart(fromSymbol);
