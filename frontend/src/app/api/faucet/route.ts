@@ -36,7 +36,7 @@ import {
 } from "@solana/spl-token";
 import { manifest } from "@/lib/manifest";
 import { rpcEndpoint } from "@/lib/rpc";
-import { awaitLanding } from "@/lib/confirm";
+import { BlockhashRejectedError, awaitLanding, sendWithFreshBlockhash } from "@/lib/confirm";
 import {
   FaucetInputError,
   decideDrop,
@@ -248,15 +248,24 @@ export async function POST(request: Request) {
     // 🇪🇸 NOTA: send + confirm por separado, en vez de
     // `sendAndConfirmTransaction`, por una sola razón: así tenemos el SLOT de
     // la confirmación, que es lo que hace verificable la lectura siguiente.
-    const latest = await connection.getLatestBlockhash("confirmed");
-    transaction.recentBlockhash = latest.blockhash;
-    transaction.feePayer = faucet.publicKey;
-    transaction.sign(faucet);
-
-    const signature = await connection.sendRawTransaction(transaction.serialize(), {
-      preflightCommitment: "confirmed",
-    });
-    const landing = await awaitLanding(connection, signature, latest.lastValidBlockHeight, {
+    //
+    // 🔴 `attempts: 2` — aquí el reintento SÍ es silencioso: firma nuestra
+    // clave, no hay nadie delante de una wallet. Si el nodo que simula no
+    // reconoce el blockhash, se pide otro y se vuelve a firmar sin que el
+    // visitante se entere.
+    const { signature, lastValidBlockHeight } = await sendWithFreshBlockhash(
+      connection,
+      async (latest) => {
+        transaction.recentBlockhash = latest.blockhash;
+        transaction.feePayer = faucet.publicKey;
+        // Firmas previas de otro intento ya no valen: el mensaje cambió.
+        transaction.signatures = [];
+        transaction.sign(faucet);
+        return transaction.serialize();
+      },
+      { attempts: 2 }
+    );
+    const landing = await awaitLanding(connection, signature, lastValidBlockHeight, {
       timeoutMs: CONFIRM_TIMEOUT_MS,
       pollMs: POLL_MS,
     });
@@ -356,6 +365,20 @@ export async function POST(request: Request) {
     // llevar la pubkey del faucet, los logs del programa y detalle interno que
     // no le sirve de nada a quien pidió tokens.
     console.error("[faucet] mint failed:", err);
+
+    // Dos intentos y el nodo que simula seguía sin reconocer el blockhash: es
+    // la red, no el visitante, y no se envió nada. Decirlo así evita que se
+    // quede preguntándose si le han cobrado.
+    if (err instanceof BlockhashRejectedError) {
+      return NextResponse.json(
+        {
+          error:
+            "The network was unstable and the faucet could not get a transaction accepted. " +
+            "Nothing was sent — try again in a moment.",
+        },
+        { status: 502 }
+      );
+    }
     return NextResponse.json(
       { error: "The faucet could not mint right now. Try again in a moment." },
       { status: 502 }

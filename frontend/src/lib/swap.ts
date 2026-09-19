@@ -15,7 +15,11 @@ import { BN } from "@anchor-lang/core";
 import { createAssociatedTokenAccountInstruction } from "@solana/spl-token";
 import type { SwapDirection } from "./market";
 import { getProgram, swapAccounts, type AnchorWalletLike } from "./program";
-import { TransactionUnconfirmedError, awaitLanding } from "./confirm";
+import {
+  TransactionUnconfirmedError,
+  awaitLanding,
+  sendWithFreshBlockhash,
+} from "./confirm";
 
 export interface SwapRequest {
   connection: Connection;
@@ -56,19 +60,28 @@ export async function executeSwap(request: SwapRequest): Promise<string> {
     .preInstructions(preInstructions)
     .transaction();
 
-  const latest = await connection.getLatestBlockhash("confirmed");
-  transaction.feePayer = wallet.publicKey;
-  transaction.recentBlockhash = latest.blockhash;
-
-  const signed = await wallet.signTransaction(transaction);
   // 🇪🇸 NOTA: con preflight. Un swap que va a fallar (slippage, liquidez) falla
   // ANTES de gastar la comisión, y el error trae los logs del programa, que es
   // de donde `describeError` saca el código de Anchor.
-  const signature = await connection.sendRawTransaction(signed.serialize(), {
-    preflightCommitment: "confirmed",
-  });
+  //
+  // 🔴 `attempts: 1` — sin reintento automático, A PROPÓSITO. Cambiar el
+  // blockhash invalida la firma que la wallet ya dio, así que reintentar aquí
+  // significa abrir Solflare por segunda vez: el usuario vería el popup otra
+  // vez sin saber si va a pagar dos. Con blockhash `finalized` el caso es raro,
+  // y cuando ocurra es mejor un mensaje que diga que no se envió nada y que
+  // puede volver a pulsar.
+  const { signature, lastValidBlockHeight } = await sendWithFreshBlockhash(
+    connection,
+    async (latest) => {
+      transaction.feePayer = wallet.publicKey;
+      transaction.recentBlockhash = latest.blockhash;
+      const signed = await wallet.signTransaction(transaction);
+      return signed.serialize();
+    },
+    { attempts: 1 }
+  );
 
-  const landing = await awaitLanding(connection, signature, latest.lastValidBlockHeight);
+  const landing = await awaitLanding(connection, signature, lastValidBlockHeight);
 
   if (landing.status === "failed") {
     throw new Error(`The swap did not go through: ${landing.detail}`);

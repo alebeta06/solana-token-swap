@@ -107,6 +107,86 @@ export async function awaitLanding(
   }
 }
 
+/** True when the node that simulated the transaction did not know the blockhash. */
+export function isBlockhashNotFound(err: unknown): boolean {
+  const message = (err as { message?: unknown })?.message;
+  return typeof message === "string" && /blockhash not found/i.test(message);
+}
+
+/**
+ * The node that simulated the transaction did not recognise its blockhash.
+ *
+ * 🔴 No es culpa de quien pulsó el botón, y **no se envió nada**: el fallo
+ * ocurre en la simulación previa, antes de que la transacción exista. Quien lo
+ * muestre tiene que decir las dos cosas, o el visitante se queda sin saber si
+ * le han cobrado.
+ */
+export class BlockhashRejectedError extends Error {
+  constructor() {
+    super(
+      "The network did not accept the transaction's blockhash. Nothing was sent and " +
+        "nothing was charged — try again."
+    );
+    this.name = "BlockhashRejectedError";
+  }
+}
+
+export interface LatestBlockhash {
+  blockhash: string;
+  lastValidBlockHeight: number;
+}
+
+export interface BlockhashSender {
+  getLatestBlockhash(commitment: "confirmed" | "finalized"): Promise<LatestBlockhash>;
+  sendRawTransaction(raw: Uint8Array | Buffer, options?: unknown): Promise<string>;
+}
+
+/**
+ * Asks for a blockhash, hands it to `sign`, and sends what comes back.
+ *
+ * 🔴 Por qué `finalized` y no `confirmed`. El blockhash lo pide UNA petición
+ * HTTP y la simulación la hace OTRA, y con un proveedor multinodo no tienen por
+ * qué caer en el mismo backend: si el segundo va por detrás, su banco no conoce
+ * ese blockhash y el preflight falla con `Blockhash not found` — de forma
+ * intermitente, que es la peor manera de fallar.
+ *
+ * Un blockhash `finalized` tiene ya ~31 slots (~12 s) de antigüedad, así que un
+ * backend tendría que ir 31 slots por detrás para no conocerlo, cuando lo
+ * medido en este proyecto son 3. **El coste es real y acotado:** la ventana de
+ * validez pasa de ~146 a ~115 bloques, de ~59 s a ~46 s para firmar y entrar.
+ * En el swap hay una persona leyendo el popup de la wallet y 46 s le sobran;
+ * en el faucet no hay humano y no se nota.
+ *
+ * `attempts` es 1 donde reintentar cuesta una segunda firma del usuario (el
+ * swap: cambiar el blockhash invalida la firma que ya dio) y 2 donde el
+ * reintento es silencioso porque firma una clave nuestra (el faucet).
+ */
+export async function sendWithFreshBlockhash(
+  connection: BlockhashSender,
+  sign: (latest: LatestBlockhash) => Promise<Uint8Array | Buffer>,
+  options: { attempts?: number } = {}
+): Promise<{ signature: string; lastValidBlockHeight: number }> {
+  const attempts = options.attempts ?? 1;
+
+  for (let attempt = 1; ; attempt++) {
+    const latest = await connection.getLatestBlockhash("finalized");
+    const raw = await sign(latest);
+    try {
+      const signature = await connection.sendRawTransaction(raw, {
+        preflightCommitment: "confirmed",
+      });
+      return { signature, lastValidBlockHeight: latest.lastValidBlockHeight };
+    } catch (err) {
+      // Solo este error se reintenta. Cualquier otro —slippage, liquidez, saldo—
+      // volvería a fallar igual y reintentarlo solo retrasa el mensaje bueno.
+      if (!isBlockhashNotFound(err) || attempt >= attempts) {
+        if (isBlockhashNotFound(err)) throw new BlockhashRejectedError();
+        throw err;
+      }
+    }
+  }
+}
+
 /**
  * A transaction that was sent but could not be confirmed in time.
  *
