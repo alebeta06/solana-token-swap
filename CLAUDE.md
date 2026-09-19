@@ -669,6 +669,15 @@ trivial dado el historial de incompatibilidades de toolchain (ver "Entorno").
   se acuñó nada manda a reintentar a quien ya ha recibido — y entonces le sale un
   "ya tienes tokens" que le contradice. Códigos distintos (502 vs 504) y textos
   distintos.
+- 🔴 **El blockhash se pide `finalized`, no `confirmed`.** Lo pide una petición y la
+  simulación la hace otra: con un proveedor multinodo pueden caer en backends distintos
+  y el preflight falla con `Blockhash not found`, **de forma intermitente**. Un
+  blockhash finalizado tiene ~31 slots de antigüedad contra los 3 de desfase medido. El
+  coste, medido: la ventana de validez baja de ~146 a ~115 bloques (~59 s → ~46 s).
+- **El reintento de blockhash NO es automático en el navegador.** Cambiar el blockhash
+  invalida la firma de la wallet, así que reintentar abre el popup por segunda vez y el
+  usuario no sabe si pagará dos. El swap avisa y deja el botón listo; el faucet, que
+  firma con clave propia y sin humano delante, reintenta una vez en silencio.
 - 🔴 **En Solana, leer justo después de escribir necesita `minContextSlot`.** El RPC
   público es un balanceador: sus backends van desfasados entre sí (medido: ~1,2 s en
   devnet), así que la lectura posterior a una confirmación puede caer en un nodo que aún

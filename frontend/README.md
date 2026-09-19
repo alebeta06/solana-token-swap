@@ -81,7 +81,7 @@ src/
     errors.ts    código de error de Anchor → una frase útil     (errors.test.ts)
 ```
 
-`yarn test` (vitest, 76 tests) cubre los módulos sin red. No tocan la red: la
+`yarn test` (vitest, 82 tests) cubre los módulos sin red. No tocan la red: la
 política del faucet se decide en `faucet.ts` justo para poder probarla sin cadena.
 
 ### 🔴 El mapeo A/B
@@ -121,6 +121,7 @@ Si pones el tuyo en `NEXT_PUBLIC_RPC_URL`, esto es lo que tiene que soportar:
 | Necesita | Método | Para qué |
 | -------- | ------ | -------- |
 | Sí | `getSignatureStatuses` | Confirmar una transacción sin suscribirse |
+| Sí | `getLatestBlockhash` con `finalized` | Un blockhash que todos sus nodos conozcan |
 | Sí | `getMultipleAccounts` con `minContextSlot` | Leer saldos sin carreras (ver más abajo) |
 | Sí | `getLatestBlockhash` · `getBlockHeight` · `sendTransaction` · `getAccountInfo` · `getBalance` | Lo básico |
 | **No** | `signatureSubscribe` · `accountSubscribe` | **No se usa en ninguna parte** |
@@ -152,6 +153,72 @@ misma función (`src/lib/confirm.ts`):
 | ------ | ----- | ----- |
 | Faucet (servidor) | `confirmTransaction` | `awaitLanding` → `getSignatureStatuses` |
 | Swap (navegador) | `.rpc()` de Anchor | `.transaction()` + firma + `awaitLanding` |
+
+### El desfase entre nodos es medible — y explica un fallo intermitente
+
+Un proveedor sirve muchos nodos detrás de una URL. **El blockhash lo pide una petición
+y la simulación la hace otra**, así que pueden caer en backends distintos: si el
+segundo va por detrás, su banco no conoce ese blockhash y el preflight falla con
+`Blockhash not found`. No falla siempre — falla cuando toca —, y un fallo intermitente
+sin explicación es peor que uno consistente.
+
+Merece la pena medirlo antes de diagnosticar nada. Contra `api.devnet.solana.com`:
+
+```
+20 getSlot simultáneos → spread entre backends = 3 slots (~1,2 s)
+20 isBlockhashValid sobre un blockhash 'confirmed' recién pedido → 20 de 20 válidos
+```
+
+Ese pool iba sincronizado en ese instante; otro proveedor puede no ir. **La misma
+prueba sobre tu RPC te dice en un segundo si es tu caso** — si alguna respuesta sale
+`false`, el blockhash recién emitido no lo conocen todos sus nodos:
+
+```bash
+RPC="<tu url>"
+BH=$(curl -s $RPC -X POST -H 'content-type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"getLatestBlockhash","params":[{"commitment":"confirmed"}]}' \
+  | python3 -c "import sys,json;print(json.load(sys.stdin)['result']['value']['blockhash'])")
+for i in $(seq 1 20); do (curl -s $RPC -X POST -H 'content-type: application/json' \
+  -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"isBlockhashValid\",\"params\":[\"$BH\",{\"commitment\":\"confirmed\"}]}" \
+  | python3 -c "import sys,json;print(json.load(sys.stdin)['result']['value'])") & done | sort | uniq -c
+```
+
+**Por eso el blockhash se pide `finalized`**, en el swap y en el faucet. Medido tres
+veces en devnet:
+
+```
+ronda 1 → ventana confirmed 147 bloques · ventana finalized 116 · finalized va 31 por detrás
+ronda 2 → ventana confirmed 146 bloques · ventana finalized 115 · finalized va 31 por detrás
+ronda 3 → ventana confirmed 146 bloques · ventana finalized 116 · finalized va 30 por detrás
+```
+
+Un blockhash `finalized` tiene ya ~31 slots (~12 s) de antigüedad: un backend tendría
+que ir **31 slots por detrás** para no conocerlo, contra los **3** medidos. **El coste
+está acotado:** la ventana de validez baja de ~146 a ~115 bloques — de ~59 s a ~46 s
+para firmar y entrar. En el swap hay una persona leyendo el popup de la wallet, y 46 s
+le sobran; en el faucet no hay humano.
+
+### El reintento, y por qué es distinto en cada lado
+
+| | Swap (navegador) | Faucet (servidor) |
+| --- | --- | --- |
+| Blockhash | `finalized` | `finalized` |
+| Reintento | **no** (`attempts: 1`) | sí, uno (`attempts: 2`) |
+| Si falla | mensaje y el botón listo | 502 diciendo que la red no cooperó |
+
+**Cambiar el blockhash invalida la firma que la wallet ya dio.** Reintentar en el
+navegador significa abrir Solflare por segunda vez, y alguien que firmó una vez y ve el
+popup otra vez no sabe si va a pagar dos. Por eso el swap no reintenta solo: dice
+*"Nothing was sent and nothing was charged — try again"* y deja el botón listo. En el
+faucet firma una clave nuestra, no hay nadie delante, y el reintento es silencioso.
+
+Hay un test que afirma que con `attempts: 1` **no se pide una segunda firma**.
+
+⚠️ **El camino del reintento no se puede provocar contra un RPC real:** depende de que
+la petición caiga en un backend atrasado, que es justo lo que no se controla. Está
+cubierto con un doble que falla la primera vez y funciona la segunda — eso prueba que
+la lógica se dispara con ese error y no con otros, no que se comporte así contra
+Alchemy.
 
 ### `confirmed`, no `processed` — decisión, no descuido
 
@@ -374,7 +441,7 @@ la keypair **no está en el repo** y no debe estarlo.
 
 | Comprobación                                        | Estado |
 | --------------------------------------------------- | ------ |
-| `yarn test` — 76 tests                                | ✅ |
+| `yarn test` — 82 tests                                | ✅ |
 | `yarn typecheck`                                     | ✅ |
 | `yarn build`                                         | ✅ |
 | Comprobación de manifest obsoleto rompe el build     | ✅ (provocada a propósito) |
