@@ -48,7 +48,7 @@ import * as path from "path";
 
 const KEYPAIR_PATH = path.join(os.homedir(), ".config/solana/id.json");
 const FAUCET_KEYPAIR_PATH =
-  process.env.FAUCET_KEYPAIR ??
+  process.env.FAUCET_KEYPAIR_PATH ??
   path.join(os.homedir(), ".solana-keys/faucet.json");
 const MANIFEST_PATH = path.join(__dirname, "..", "devnet.json");
 const RPC_URL = clusterApiUrl("devnet");

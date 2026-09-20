@@ -24,7 +24,7 @@ import * as path from "path";
 
 const KEYPAIR_PATH = path.join(os.homedir(), ".config/solana/id.json");
 const FAUCET_KEYPAIR_PATH =
-  process.env.FAUCET_KEYPAIR ??
+  process.env.FAUCET_KEYPAIR_PATH ??
   path.join(os.homedir(), ".solana-keys/faucet.json");
 const MANIFEST_PATH = path.join(__dirname, "..", "devnet.json");
 
@@ -58,7 +58,7 @@ function loadMintAuthority(manifest: any): Keypair {
     throw new Error(
       `Minting needs the faucet keypair: it holds the mint authority of both mints ` +
         `since phase 8, and ${KEYPAIR_PATH} no longer does. ` +
-        `${FAUCET_KEYPAIR_PATH} does not exist — point FAUCET_KEYPAIR at the file.`
+        `${FAUCET_KEYPAIR_PATH} does not exist — point FAUCET_KEYPAIR_PATH at the file.`
     );
   }
   const faucet = loadKeypair(FAUCET_KEYPAIR_PATH);
