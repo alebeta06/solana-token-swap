@@ -19,7 +19,7 @@ My first Solana program, coming from Solidity and Cairo. Built as Module 15 of t
 | **Start here** | [Live demo](#live-demo) · [What it does](#what-it-does) · [Instructions](#instructions) |
 | **The design** | [Account design](#account-design) · [How an instruction runs](#how-an-instruction-runs) · [The arithmetic](#the-arithmetic) · [Design decisions](#design-decisions) · [Authority separation](#authority-separation) |
 | **What is live** | [Devnet deployment](#devnet-deployment) · [Frontend and faucet](#frontend-and-faucet) |
-| **Working on it** | [Running it](#running-it) · [Tests](#tests) · [Toolchain](#toolchain) |
+| **Working on it** | [Running it](#running-it) · [Tests](#tests) · [Three pairs of tools](#three-pairs-of-tools-and-which-half-of-the-repo-each-checks) · [Toolchain](#toolchain) |
 | **Honesty** | [Known limitations](#known-limitations) · [Roadmap](#roadmap) |
 
 Five diagrams, one per thing worth understanding: [the account model](#the-complete-account-model), [PDA derivation](#how-the-pdas-are-derived), [`initialize_market`](#initialize_market), [a swap A→B](#a-swap-a-to-b-step-by-step) and [who controls what](#authority-separation).
@@ -558,20 +558,34 @@ The asset to protect is **not the token supply** — these tokens are worthless 
 
 ## Tests
 
-⚠️ **Two runners with disjoint scopes. Running one is not running both** — and believing otherwise has produced false confidence here twice.
+### Three pairs of tools, and which half of the repo each checks
 
-| Scope | Runner | Covers | Command |
+**The repo has two scopes, and every quality tool in it covers exactly one of them.** That is deliberate, and it is the single easiest thing to get wrong here: ⚠️ **running one half and believing you ran both has produced false confidence twice.**
+
+| Concern | Root scope — `programs/`, `tests/`, `scripts/` | Frontend scope — `frontend/**` | One command for both? |
 |---|---|---|---|
-| Program | Mocha (`ts-mocha`) via Anchor | `tests/`, `scripts/` | `anchor test --skip-local-validator` |
-| Frontend | Vitest | `frontend/**` | `yarn --cwd frontend test` |
-
-**27 program tests + 96 frontend tests.** Type-checking has the same split, but there it *is* covered by one command:
+| **Type-check** | `yarn typecheck` · `tsconfig.json`, strict | `yarn typecheck:frontend` · `frontend/tsconfig.json`, strict | ✅ `yarn typecheck:all` |
+| **Tests** | `anchor test --skip-local-validator` · Mocha, **27** tests, needs a validator | `yarn --cwd frontend test` · Vitest, **96** tests | ❌ **no combined command — run both** |
+| **Formatting** | `yarn lint` · Prettier, `yarn lint:fix` to apply | *none, deliberately* | — |
 
 ```bash
 yarn typecheck:all        # = yarn typecheck && yarn typecheck:frontend
+yarn lint                 # Prettier --check over the root scope only
 ```
 
-The two `tsconfig.json` are incompatible on purpose — the root is `commonjs` with no `jsx` or `dom`, the frontend is `esnext` + `bundler` with `jsx` and the `@/` alias — so neither can check the other's files.
+The two `tsconfig.json` are incompatible on purpose — the root is `commonjs` with no `jsx` or `dom`, the frontend is `esnext` + `bundler` with `jsx` and the `@/` alias — so neither can check the other's files. Both set `strict`.
+
+**`yarn lint` checks the root scope only**, because `frontend` is listed in [`.prettierignore`](.prettierignore). Before that entry existed the command reported 28 files in the wrong style and exited non-zero — 23 of them frontend files it had no business formatting, and **5 of them genuinely unformatted files in `tests/` and `scripts/`**, hidden in the noise. Those five are formatted now, and a command nobody runs is a command nobody notices is broken.
+
+### The frontend has no linter, on purpose
+
+Its safety net is **`strict` type-checking plus 96 Vitest tests**, and that is the whole of it. This is a decision, not an omission:
+
+- The `lint` script that `create-next-app` scaffolds was never configured. It ran `next lint` with no ESLint config, so it **asked to be configured on the console and exited 1** — even with no TTY, which means in CI too. It has been removed rather than left there looking like a check.
+- **`next lint` is deprecated in Next 15 and removed in Next 16.** Configuring it would be investing in something already on its way out.
+- Adding ESLint to 29 already-written files during submission week would open a front at the worst possible moment, with an unknown number of warnings to triage.
+
+🇪🇸 **NOTA — la lección, que es de proceso y no de código.** Las tres veces que este patrón ha mordido en el proyecto han sido iguales: un comando del `package.json` que nadie corre y que llevaba tiempo roto —`migrations/deploy.ts`, que no compilaba desde hacía meses; el `lint` de la raíz; el `lint` del frontend—. El tooling de calidad **protege los cambios de meses y no sirve de nada añadido cuando el código ya está congelado**, porque entonces solo puede darte trabajo, nunca avisarte a tiempo. Va en el primer commit o no va.
 
 The repo commits three generated artifacts (`target/idl/solana_token_swap.json` and the two files in `target/types/`) precisely so that `yarn typecheck` works on a fresh clone **without installing the Solana toolchain**. After any change to `programs/`, they have to be regenerated with `anchor build` and committed; a type-check that passes against a stale IDL is checking the client against a program that no longer exists.
 

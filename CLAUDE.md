@@ -722,6 +722,35 @@ trivial dado el historial de incompatibilidades de toolchain (ver "Entorno").
 
 ---
 
+## Para el próximo módulo — el tooling de calidad va en el primer commit
+
+No es una preferencia de estilo: es el mismo fallo tropezado **tres veces** en este
+proyecto, siempre con la misma forma — **un comando del `package.json` que nadie corre y
+que lleva tiempo roto**:
+
+| Qué | Cuánto llevaba roto | Cómo se descubrió |
+| --- | ------------------- | ----------------- |
+| `migrations/deploy.ts` | meses sin compilar | al arreglar el typecheck en la Fase 6; se borró |
+| `yarn lint` de la raíz | desde la Fase 0 | preparando los badges, Fase 9 |
+| `yarn lint` del frontend | desde la Fase 7 | al cerrar lo anterior; `next lint` sin config, exit 1 |
+
+**El tooling protege cambios durante meses y no sirve de nada añadido cuando el código
+ya está congelado** — entonces solo puede dar trabajo, nunca avisar a tiempo. De ahí las
+dos tareas para el módulo siguiente, que son la misma:
+
+1. **Formateador y linter configurados y en verde en el primer commit**, con su alcance
+   decidido desde el principio. Si hay dos alcances (raíz y frontend), o los cubre un
+   comando combinado o se documenta que son dos. Ver "Three pairs of tools" en el README.
+2. **GitHub Actions desde el primer commit**, corriendo esos comandos. Un check que solo
+   existe en local es un check que se descubre roto meses después; en CI se rompe en el
+   PR que lo rompe.
+
+⚠️ En este módulo **no hay CI**, y por eso los tres comandos rotos sobrevivieron. No es
+una limitación técnica: nadie los corrió.
+
+ℹ️ `next lint` está **deprecado en Next 15 y se elimina en la 16** — si el próximo
+proyecto es Next, el linter se monta con ESLint directamente, no con ese wrapper.
+
 ## Convenciones
 
 - Conventional Commits en inglés, atómicos por unidad lógica
