@@ -4,9 +4,10 @@ Proyecto del Máster CodeCrypto (Blockchain Engineering & AI), Módulo 15 — To
 Swap de tokens SPL con precio fijo, en Anchor. **Primera experiencia del autor con
 Solana y Rust** — explicar antes de implementar, comparando siempre con Solidity/EVM.
 
-> ⚠️ **Estado actual: Fases 0–8 completadas — el faucet funciona en producción.
-> La Fase 9 está EN CURSO: el README de la raíz está escrito (bloque 2); quedan el
-> deploy documentado en Vercel y el verified build.**
+> ⚠️ **Estado actual: Fases 0–9 completadas — el faucet funciona en producción y la
+> documentación está cerrada. El verified build quedó INVESTIGADO Y DESCARTADO, con el
+> motivo medido (ver "El verified build de la Fase 9"). Queda solo la Fase 10: video y
+> entrega.**
 > Son 11 fases (0 a 10). Ver "Plan completo — las 11 fases" y "Estado del programa".
 
 ---
@@ -269,7 +270,8 @@ IDL está publicado on-chain en el **program-metadata program** (`idl.source: "p
 no porque se lo demos. Instrucciones decodificadas con sus cuentas nombradas. Los dos
 CPIs de un swap con **las autoridades correctas y distintas**: la wallet firma la
 entrada, el PDA del mercado la salida. Mints completos. Programas con
-`upgrade_authority` y `verification.status` (hoy `unverified` — eso cambia en Fase 9).
+`upgrade_authority` y `verification.status` (`unverified`, y **se queda así**: ver "El
+verified build de la Fase 9").
 
 **Cuatro huecos que hay que suplir por otra vía:**
 
@@ -458,8 +460,9 @@ En el denominador de A→B hay dos factores que **por casualidad pueden valer lo
 
 ## Estado del programa
 
-**Fases 0–7 completadas** ✅ — programa con **27 tests en verde**, desplegado en
-devnet, y **frontend funcionando con el swap verificado on-chain**.
+**Fases 0–9 completadas** ✅ — programa con **27 tests en verde**, desplegado en
+devnet, **frontend funcionando con el swap verificado on-chain**, faucet en producción
+y documentación cerrada.
 
 ### El frontend (Fase 7)
 
@@ -516,7 +519,7 @@ Fase 5.
 
 **Rúbrica cubierta:** mercado+liquidez con PDAs (30%) ✅ · swap A→B (20%) ✅ ·
 swap B→A (30%) ✅ · tests (parte del 20%) ✅ · frontend ✅ (fase 7) ·
-documentación ⬜ (fase 9)
+documentación ✅ (fase 9)
 
 ### Lo que resolvió la Fase 5
 
@@ -539,20 +542,19 @@ así que **tiene que correr antes que `set_price`**. Quitarla significaría perd
 el test afirma: que `initialize_market` NO deja el mercado operativo. Mocha respeta el
 orden de declaración; el test lo dice en un comentario.
 
-### En curso: Fase 8 — faucet + metadata de Metaplex
+### Fase 8 — faucet + metadata de Metaplex (cerrada)
 
-Cuatro pasos. **Los pasos 1 y 2 están cerrados; el 3 y el 4 están escritos y a falta
-de probarlos contra devnet desde el navegador.**
+Cuatro pasos, los cuatro cerrados y probados contra devnet desde el navegador.
 
 | Paso | Contenido                                                        | Estado |
 | ---- | ---------------------------------------------------------------- | ------ |
 | 1    | Metadata de Metaplex en DEMO6 y DEMO9                            | ✅     |
 | 2    | Keypair dedicada del faucet + traspaso de la mint authority      | ✅     |
-| 3    | Route handler del faucet en Next.js (acuña a la ATA del visitante) | 🔄 escrito, sin probar |
-| 4    | Botón de faucet en el frontend, en lugar del `FaucetNotice`      | 🔄 escrito, sin probar |
+| 3    | Route handler del faucet en Next.js (acuña a la ATA del visitante) | ✅     |
+| 4    | Botón de faucet en el frontend, en lugar del `FaucetNotice`      | ✅     |
 
-La documentación general **no** es la fase 8: el README de la raíz y los diagramas
-van en la fase 9, junto con el deploy a Vercel.
+La documentación general **no** fue la fase 8: el README de la raíz y los diagramas
+fueron la fase 9, junto con el deploy a Vercel.
 
 #### Paso 1 — metadata (cerrado)
 
@@ -714,26 +716,68 @@ cualquier visitante consiga tokens sin pedírselos al desplegador.
 | 6    | Deploy devnet + mints propias + script de seed   | ✅     |
 | 7    | Frontend Next.js                                 | ✅     |
 | 8    | Faucet + metadata de Metaplex (DEMO6/DEMO9)      | ✅     |
-| 9    | Vercel + README + diagramas + **verified build** | 🔄 en curso (README de la raíz ✅) |
+| 9    | Vercel + README + diagramas + **verified build** | ✅ (el verified build, descartado con motivo) |
 | 10   | Video + entrega GitHub/GitLab                    | ⬜     |
 
 ### El verified build de la Fase 9
 
-Un **verified build** permite a cualquiera reproducir el binario desde el código fuente y
-comprobar que coincide con el que está desplegado on-chain. Sin él, "está desplegado" solo
-significa que hay un binario en esa dirección — nadie puede saber si corresponde a este
-repositorio.
+⛔ **INVESTIGADO Y DESCARTADO el 2026-09-20. No volver a intentarlo sin que cambie algo
+del ecosistema.** Un verified build permite a cualquiera reproducir el binario desde el
+código y comprobar que coincide con el desplegado. Aquí es **imposible**, por dos muros
+medidos — ninguno de ellos del proyecto. El desarrollo completo está en el README de la
+raíz, sección "Verifying the deployed binary".
 
-**Por qué va en la Fase 9 y no antes:** se rompe con cada redespliegue, porque verifica un
-binario concreto contra un commit concreto. Su producto es un badge y un enlace que van al
-README. Hacerlo antes de cerrar frontend (Fase 7) y faucet (Fase 8) sería trabajo repetido.
+**Muro 1 — la verificación remota solo cubre mainnet.** El badge del explorer lo emite la
+API de OtterSec, y la documentación oficial de Solana lo dice literal: *"Remote
+verification will only work on mainnet."* Este programa está en devnet, así que
+`verification.status` se queda en `unverified` haga lo que haga el resto. **Este muro solo
+lo tira redesplegar en mainnet**, que no es lo que pide el módulo.
 
-⚠️ **El proceso hay que investigarlo cuando toque.** Existe la herramienta `solana-verify`
-y un registro público, pero **el flujo exacto no está verificado en este proyecto**.
-**Primera acción de esa tarea: consultar el MCP oficial de Solana**
-(`Solana_Documentation_Search` / `Solana_Expert__Ask_For_Help`). Contar también con que
-normalmente exige un **build reproducible dentro de Docker**, lo que aquí puede no ser
-trivial dado el historial de incompatibilidades de toolchain (ver "Entorno").
+**Muro 2 — no existe imagen Docker para Solana 4.2.2.** El repositorio
+`solanafoundation/solana-verifiable-build` publica 608 tags y la serie 4 **se para en
+4.1.2**. Medido dentro de la 4.1.2, que es la más cercana disponible:
+
+| | Contenedor 4.1.2 | Binario desplegado |
+| --- | --- | --- |
+| Toolchain de Solana | `cargo-build-sbf` 4.1.0 | 4.2.2, fijada en `Anchor.toml` |
+| platform-tools | **v1.54** | **v1.57** |
+| rustc que compila a SBF | **1.89.0** | **1.95.0** |
+
+La columna del contenedor sale de leer la imagen; la nuestra, de `avm platform-tools
+resolve` sobre este workspace. ⚠️ El `cargo-build-sbf` del PATH del sistema **no** es el
+que usa Anchor (reporta 4.1.0 / v1.54): el bueno lo resuelve Anchor desde `solana_version`.
+
+Compiladores distintos ⇒ bytecode distinto ⇒ el hash no cuadra, y `verify-from-repo`
+**se niega a escribir la PDA** cuando no coinciden. Así que ni siquiera queda el valor
+parcial de dejar el origen registrado on-chain, salvo reconstruyendo con el contenedor
+viejo y **redesplegando ese binario** — cambiar un despliegue que funciona por un registro
+que el explorer no mostraría igualmente. Descartado.
+
+📌 **La ironía, que es el hallazgo real y va al video:** fijar `solana_version = "4.2.2"`
+fue lo único que resolvió la guerra de toolchain de la Fase 0 y el asunto de SBPFv3.
+Nueve fases después, esa misma versión es la que impide el build reproducible, porque las
+imágenes del ecosistema aún no han llegado a ella. **La solución de la Fase 0 es el
+bloqueo de la Fase 9.** No es un fallo: es el precio de fijar una versión que las
+herramientas de alrededor todavía no alcanzan, y se paga tarde y en otro sitio.
+
+### Lo que sí quedó, y cómo se comprueba
+
+El binario desplegado **es byte a byte** el que produce este repo. Verificado el
+2026-09-20 con `solana-verify 0.5.1` (binario de release, sha256 contrastado):
+
+```bash
+solana-verify get-program-hash -u devnet BJ7GHy1zRe1VKuKUZU2ac2q1VQmtukmHzCpbo98m21qp
+solana-verify get-executable-hash target/deploy/solana_token_swap.so
+# los dos: c4d05cb19d58b0688434a63b94ad0a1ab9af24e6ff58d3277f1cd9efed37cf98
+```
+
+Fichero crudo idéntico también: 233 184 bytes, sha256 `1088ea31…`. Los hashes de
+`solana-verify` son sha256 **sin el relleno de ceros del final** — por eso no coinciden
+con un `sha256sum` a secas.
+
+⚠️ **Eso NO es un build reproducible** y no hay que venderlo como tal: demuestra que lo
+desplegado es lo que sale de *este* toolchain, no que cualquiera con Docker llegue al
+mismo binario. Es la mitad útil, y es honesta mientras se diga cuál de las dos mitades es.
 
 ---
 

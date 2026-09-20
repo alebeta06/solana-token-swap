@@ -6,7 +6,7 @@ A fixed-price SPL token swap on Solana, written in Rust with Anchor 1.2.0.
 
 My first Solana program, coming from Solidity and Cairo. Built as Module 15 of the CodeCrypto Master's in Blockchain Engineering & AI.
 
-> **Status:** phases 0–8 done, phase 9 in progress · 27 program tests + 96 frontend tests passing · `yarn typecheck:all` clean · **deployed on devnet and exercised with a real round trip** · **[live demo](https://solana-token-swap.vercel.app/)** with a working faucet · not audited, educational code.
+> **Status:** phases 0–9 done, phase 10 (walkthrough video and submission) pending · 27 program tests + 96 frontend tests passing · `yarn typecheck:all` clean · **deployed on devnet and exercised with a real round trip** · **[live demo](https://solana-token-swap.vercel.app/)** with a working faucet · not audited, educational code.
 
 **Live demo → [solana-token-swap.vercel.app](https://solana-token-swap.vercel.app/)**
 
@@ -18,7 +18,7 @@ My first Solana program, coming from Solidity and Cairo. Built as Module 15 of t
 |---|---|
 | **Start here** | [Live demo](#live-demo) · [What it does](#what-it-does) · [Instructions](#instructions) |
 | **The design** | [Account design](#account-design) · [How an instruction runs](#how-an-instruction-runs) · [The arithmetic](#the-arithmetic) · [Design decisions](#design-decisions) · [Authority separation](#authority-separation) |
-| **What is live** | [Devnet deployment](#devnet-deployment) · [Frontend and faucet](#frontend-and-faucet) |
+| **What is live** | [Devnet deployment](#devnet-deployment) · [Verifying the deployed binary](#verifying-the-deployed-binary) · [Frontend and faucet](#frontend-and-faucet) |
 | **Working on it** | [Running it](#running-it) · [Tests](#tests) · [Three pairs of tools](#three-pairs-of-tools-and-which-half-of-the-repo-each-checks) · [Toolchain](#toolchain) |
 | **Honesty** | [Known limitations](#known-limitations) · [Roadmap](#roadmap) |
 
@@ -525,6 +525,65 @@ And one sent from the browser by a wallet, which is the one that proves the fron
 
 ---
 
+## Verifying the deployed binary
+
+The binary running on devnet is byte-for-byte the one this repository builds, and you can confirm that in two commands. What is **not** possible is the formal, badge-bearing *verified build* — blocked by two limits of the tooling ecosystem, neither of them a property of this code. Both are written out below, because "we didn't do it" and "it cannot be done here" are different claims and only one of them is true.
+
+### Check the hash yourself
+
+Install [`solana-verify`](https://github.com/solana-foundation/solana-verifiable-build) and ask the chain what is deployed:
+
+```bash
+solana-verify get-program-hash -u devnet BJ7GHy1zRe1VKuKUZU2ac2q1VQmtukmHzCpbo98m21qp
+# c4d05cb19d58b0688434a63b94ad0a1ab9af24e6ff58d3277f1cd9efed37cf98
+```
+
+Then build from source with the toolchain documented under [Toolchain](#toolchain) and hash the artifact:
+
+```bash
+anchor build
+solana-verify get-executable-hash target/deploy/solana_token_swap.so
+# c4d05cb19d58b0688434a63b94ad0a1ab9af24e6ff58d3277f1cd9efed37cf98
+```
+
+Both numbers are sha256 over the binary with its trailing zero padding stripped, which is the comparison `solana-verify` itself makes. Measured on 2026-09-20 the two matched, and so did the raw files: **233 184 bytes**, sha256 `1088ea312ab864122cfaa46a5afdd9215a1b80dafc24bce4ee27f7409dfee9a7`, on chain and on disk.
+
+⚠️ **What that proves and what it doesn't.** It shows the deployed program is what *this* toolchain produces from *this* source — the useful half. It is not a reproducible build: it still relies on you having the same toolchain, rather than on a container that pins it for everyone. Closing that gap is what the two walls below prevent.
+
+### Wall 1 — remote verification only covers mainnet
+
+The verification badge an explorer shows comes from a remote build run by the [OtterSec API](https://verify.osec.io), which rebuilds the program from its public repository and compares hashes. From the official Solana documentation, [Verifying Programs](https://solana.com/docs/programs/verified-builds):
+
+> You may have different versions deployed on different Solana clusters (i.e. devnet, testnet, mainnet). Ensure you use the correct network URL for the desired Solana cluster you want to verify a program against. **Remote verification will only work on mainnet.**
+
+This program lives on devnet, so `verification.status` stays `"unverified"` no matter what else is done. That limit alone closes the question; the second one is what stops even the local half.
+
+### Wall 2 — there is no Docker image for Solana 4.2.2
+
+A reproducible build compiles inside a pinned container, `solanafoundation/solana-verifiable-build:<solana version>`. That repository publishes 608 tags and **the series 4 stops at `4.1.2`**. The version this project pins has no image.
+
+Measured inside the closest one available, `solanafoundation/solana-verifiable-build:4.1.2`:
+
+| | Container (4.1.2) | This project's deployed binary |
+|---|---|---|
+| Solana toolchain | `cargo-build-sbf` 4.1.0 | 4.2.2, pinned in `Anchor.toml` |
+| platform-tools | **v1.54** | **v1.57** |
+| rustc compiling to SBF | **1.89.0** | **1.95.0** |
+
+The container column was read from the image itself; this project's column is what `avm platform-tools resolve` reports for this workspace.
+
+Different compilers produce different bytecode, so the container's hash cannot match `c4d05cb1…` — and `verify-from-repo` refuses to write its on-chain record when the hashes disagree. The only way around it would be to build in the old container and *redeploy that binary*, trading a working deployment for a record no explorer would display on devnet anyway.
+
+### 🇪🇸 NOTA — la solución de la Fase 0 es el bloqueo de la Fase 9
+
+Fijar `solana_version = "4.2.2"` fue **lo único que resolvió la guerra de toolchain** con la que arrancó este proyecto: sin esa línea, Anchor elige un default cuyo rustc es anterior a edition 2024 y no compila las dependencias; con la 3.1.14 que recomendaba la documentación, compila pero el validador no carga el binario SBPFv3.
+
+Nueve fases después, **esa misma versión es la que hace imposible el build reproducible**, porque el ecosistema de imágenes todavía no ha llegado a ella. La solución de la Fase 0 es el bloqueo de la Fase 9.
+
+No es un fallo de nadie: es lo que pasa al fijar una versión que las herramientas de alrededor aún no alcanzan. Ir por delante tiene un precio, y se paga tarde y en otro sitio — aquí, en la única parte del proyecto que depende de que un tercero haya publicado una imagen. La alternativa tampoco era gratis: quedarse en una versión con imagen significaba no compilar.
+
+---
+
 ## Frontend and faucet
 
 Next.js 15 (App Router), TypeScript strict, Tailwind, `@solana/wallet-adapter-react` and `@anchor-lang/core`. Deployed at [solana-token-swap.vercel.app](https://solana-token-swap.vercel.app/).
@@ -752,9 +811,9 @@ What bounds the damage is the funding, not the check: the faucet holds **0.5 SOL
 
 When its SOL falls below 0.05 the endpoint refuses with 503 rather than start failing mid-mint. **The threshold has only been exercised in tests**, because provoking it for real means draining the faucet below it. The rendering of that state is covered; the server-side trigger is not.
 
-### The program is `unverified` on chain
+### The program is `unverified` on chain, and will stay that way
 
-`verification.status: "unverified"`, read from the explorer today. Anyone can see there is a binary at that address; nobody can confirm it was built from this repository. A **verified build** is phase 9 work and deliberately last: it breaks on every redeploy, so doing it before the frontend and the faucet settled would have been work done twice.
+`verification.status: "unverified"`, read from the explorer. A **verified build** was investigated in phase 9 and **ruled out as impossible for this deployment**: remote verification only covers mainnet, and the Solana version this project pins has no Docker image to build reproducibly in. Both walls are measured and written out under [Verifying the deployed binary](#verifying-the-deployed-binary), along with the hash anyone can check by hand — which recovers the useful half of what a verified build would have given.
 
 ### Fixed price, and everything that follows from it
 
@@ -773,7 +832,7 @@ No oracle, no reserves curve, no fees, no LP tokens. The price is whatever the m
 - [x] Phase 6: devnet deploy, demo mints and seed scripts
 - [x] Phase 7: Next.js frontend with wallet adapter
 - [x] Phase 8: Metaplex metadata and a public faucet
-- [ ] Phase 9: full docs, account diagrams, hosted demo and a verified build
+- [x] Phase 9: full docs, account diagrams, hosted demo — and a verified build [investigated and ruled out](#verifying-the-deployed-binary)
 - [ ] Phase 10: walkthrough video and submission
 
 A second market on EURC/USDC was planned for phase 8 and **dropped**: both of Circle's devnet tokens have 6 decimals, so `10^dec_a` and `10^dec_b` cancel and the market would not exercise the scale conversion that DEMO6/DEMO9 demonstrates — and it would put Circle's own faucet in the middle of the demo.
