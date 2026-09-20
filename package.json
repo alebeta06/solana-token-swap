@@ -1,5 +1,5 @@
 {
-  "license": "ISC",
+  "license": "MIT",
   "scripts": {
     "typecheck": "tsc --noEmit",
     "typecheck:frontend": "yarn --cwd frontend typecheck",
