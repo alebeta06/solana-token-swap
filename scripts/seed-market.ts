@@ -80,7 +80,9 @@ async function main() {
   console.log(`Payer:   ${payer.publicKey.toBase58()}`);
   console.log(`Market:  ${marketPda.toBase58()}`);
   console.log(`Vault A: ${vaultAPda.toBase58()} (${manifest.market.mintAIs})`);
-  console.log(`Vault B: ${vaultBPda.toBase58()} (${manifest.market.mintBIs})\n`);
+  console.log(
+    `Vault B: ${vaultBPda.toBase58()} (${manifest.market.mintBIs})\n`
+  );
 
   // ── 1. Mercado ────────────────────────────────────────────────────────────
   // 🇪🇸 NOTA: aquí Anchor SÍ puede derivar el PDA del mercado, porque sus seeds
@@ -151,27 +153,45 @@ async function main() {
     // 🇪🇸 NOTA: acuñamos a nuestra propia ATA primero. La mint authority es
     // este mismo payer, que es lo que hará falta para el faucet en la fase 8.
     const ataA = await getOrCreateAssociatedTokenAccount(
-      connection, payer, mintA, payer.publicKey
+      connection,
+      payer,
+      mintA,
+      payer.publicKey
     );
     const ataB = await getOrCreateAssociatedTokenAccount(
-      connection, payer, mintB, payer.publicKey
+      connection,
+      payer,
+      mintB,
+      payer.publicKey
     );
 
     if (needsA) {
       console.log(
-        `Minting ${deficitA.toString()} base units of ${manifest.market.mintAIs}...`
+        `Minting ${deficitA.toString()} base units of ${
+          manifest.market.mintAIs
+        }...`
       );
       await mintTo(
-        connection, payer, mintA, ataA.address, payer,
+        connection,
+        payer,
+        mintA,
+        ataA.address,
+        payer,
         BigInt(deficitA.toString())
       );
     }
     if (needsB) {
       console.log(
-        `Minting ${deficitB.toString()} base units of ${manifest.market.mintBIs}...`
+        `Minting ${deficitB.toString()} base units of ${
+          manifest.market.mintBIs
+        }...`
       );
       await mintTo(
-        connection, payer, mintB, ataB.address, payer,
+        connection,
+        payer,
+        mintB,
+        ataB.address,
+        payer,
         BigInt(deficitB.toString())
       );
     }

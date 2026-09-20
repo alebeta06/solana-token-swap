@@ -43,7 +43,7 @@ async function main() {
   const demo6 = await createMint(
     connection,
     payer,
-    payer.publicKey,      // mint authority — hace falta para el faucet
+    payer.publicKey, // mint authority — hace falta para el faucet
     FREEZE_AUTHORITY,
     6
   );
@@ -67,8 +67,12 @@ async function main() {
   const mintB = demo6IsLower ? demo9 : demo6;
 
   console.log("Canonical order (mint_a < mint_b):");
-  console.log(`  mint_a = ${mintA.toBase58()} (${demo6IsLower ? "DEMO6" : "DEMO9"})`);
-  console.log(`  mint_b = ${mintB.toBase58()} (${demo6IsLower ? "DEMO9" : "DEMO6"})`);
+  console.log(
+    `  mint_a = ${mintA.toBase58()} (${demo6IsLower ? "DEMO6" : "DEMO9"})`
+  );
+  console.log(
+    `  mint_b = ${mintB.toBase58()} (${demo6IsLower ? "DEMO9" : "DEMO6"})`
+  );
 
   const out = {
     cluster: "devnet",

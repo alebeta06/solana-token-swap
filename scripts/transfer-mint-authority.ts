@@ -48,7 +48,8 @@ import * as path from "path";
 
 const KEYPAIR_PATH = path.join(os.homedir(), ".config/solana/id.json");
 const FAUCET_KEYPAIR_PATH =
-  process.env.FAUCET_KEYPAIR ?? path.join(os.homedir(), ".solana-keys/faucet.json");
+  process.env.FAUCET_KEYPAIR ??
+  path.join(os.homedir(), ".solana-keys/faucet.json");
 const MANIFEST_PATH = path.join(__dirname, "..", "devnet.json");
 const RPC_URL = clusterApiUrl("devnet");
 
@@ -87,7 +88,9 @@ async function main() {
   const authority = loadKeypair(KEYPAIR_PATH);
   const faucet = faucetPubkey(FAUCET_KEYPAIR_PATH);
 
-  console.log(`Mode:      ${EXECUTE ? "EXECUTE (signs on devnet)" : "dry run"}`);
+  console.log(
+    `Mode:      ${EXECUTE ? "EXECUTE (signs on devnet)" : "dry run"}`
+  );
   console.log(`Cluster:   devnet`);
   console.log(`Authority: ${authority.publicKey.toBase58()}`);
   console.log(`Faucet:    ${faucet.toBase58()}\n`);
@@ -159,7 +162,9 @@ async function main() {
       [authority]
     );
     console.log(`  sent ${sol(deficit)} SOL — ${sig}`);
-    console.log(`  faucet now at ${sol(await connection.getBalance(faucet))} SOL\n`);
+    console.log(
+      `  faucet now at ${sol(await connection.getBalance(faucet))} SOL\n`
+    );
   }
 
   if (!EXECUTE) {
@@ -215,14 +220,19 @@ async function main() {
         `${key}: the old authority failed, but not with an authority error: ${detail}`
       );
     }
-    console.log(`${key}: old authority can no longer mint ✔ (owner does not match)`);
+    console.log(
+      `${key}: old authority can no longer mint ✔ (owner does not match)`
+    );
   }
 
   // ── 5. La update authority de la metadata NO cambió ───────────────────────
   const umi = createUmi(RPC_URL);
   for (const key of MINTS) {
     const entry = manifest.mints[key];
-    const metadata = await safeFetchMetadata(umi, publicKey(entry.metadata.pda));
+    const metadata = await safeFetchMetadata(
+      umi,
+      publicKey(entry.metadata.pda)
+    );
     if (!metadata) {
       throw new Error(`${key}: no metadata account at ${entry.metadata.pda}`);
     }

@@ -5,3 +5,7 @@ node_modules
 dist
 build
 test-ledger
+
+# El frontend tiene su propio alcance y no pasa por este prettier.
+# Ver "Three pairs of tools" en el README: cada par comprueba una mitad del repo.
+frontend

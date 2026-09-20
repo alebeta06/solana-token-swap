@@ -40,11 +40,27 @@ function loadKeypair(file: string): Keypair {
 }
 
 /** Misma aritmética que el programa: todas las multiplicaciones antes de las divisiones. */
-const expectedB = (amountA: anchor.BN, price: anchor.BN, decA: number, decB: number) =>
-  amountA.mul(price).mul(pow10(decB)).div(pow10(PRICE_DECIMALS).mul(pow10(decA)));
+const expectedB = (
+  amountA: anchor.BN,
+  price: anchor.BN,
+  decA: number,
+  decB: number
+) =>
+  amountA
+    .mul(price)
+    .mul(pow10(decB))
+    .div(pow10(PRICE_DECIMALS).mul(pow10(decA)));
 
-const expectedA = (amountB: anchor.BN, price: anchor.BN, decA: number, decB: number) =>
-  amountB.mul(pow10(PRICE_DECIMALS)).mul(pow10(decA)).div(price.mul(pow10(decB)));
+const expectedA = (
+  amountB: anchor.BN,
+  price: anchor.BN,
+  decA: number,
+  decB: number
+) =>
+  amountB
+    .mul(pow10(PRICE_DECIMALS))
+    .mul(pow10(decA))
+    .div(price.mul(pow10(decB)));
 
 const display = (base: anchor.BN | bigint, decimals: number) =>
   (Number(base.toString()) / 10 ** decimals).toFixed(decimals);
@@ -103,17 +119,25 @@ async function main() {
   console.log(`Market:  ${marketPda.toBase58()}`);
   console.log(`Token A: ${nameA} (${decimalsA} decimals) ${mintA.toBase58()}`);
   console.log(`Token B: ${nameB} (${decimalsB} decimals) ${mintB.toBase58()}`);
-  console.log(`Price:   ${market.price.toString()} (1 ${nameA} = ${
-    Number(market.price.toString()) / 10 ** PRICE_DECIMALS
-  } ${nameB})\n`);
+  console.log(
+    `Price:   ${market.price.toString()} (1 ${nameA} = ${
+      Number(market.price.toString()) / 10 ** PRICE_DECIMALS
+    } ${nameB})\n`
+  );
 
   // 🇪🇸 NOTA: las ATAs del usuario pueden no existir. Se crean desde el
   // cliente, nunca con init-if-needed en el programa.
   const ataA = await getOrCreateAssociatedTokenAccount(
-    connection, payer, mintA, payer.publicKey
+    connection,
+    payer,
+    mintA,
+    payer.publicKey
   );
   const ataB = await getOrCreateAssociatedTokenAccount(
-    connection, payer, mintB, payer.publicKey
+    connection,
+    payer,
+    mintB,
+    payer.publicKey
   );
 
   const amountInA = new anchor.BN(AMOUNT_IN_A).mul(pow10(decimalsA));
@@ -122,9 +146,16 @@ async function main() {
   // para el demo nos lo acuñamos en vez de abortar.
   if (new anchor.BN(ataA.amount.toString()).lt(amountInA)) {
     const shortfall = amountInA.sub(new anchor.BN(ataA.amount.toString()));
-    console.log(`Minting ${display(shortfall, decimalsA)} ${nameA} to cover the demo...`);
+    console.log(
+      `Minting ${display(shortfall, decimalsA)} ${nameA} to cover the demo...`
+    );
     await mintTo(
-      connection, payer, mintA, ataA.address, payer, BigInt(shortfall.toString())
+      connection,
+      payer,
+      mintA,
+      ataA.address,
+      payer,
+      BigInt(shortfall.toString())
     );
   }
 
@@ -153,8 +184,18 @@ async function main() {
 
   const report = (label: string, b: Awaited<ReturnType<typeof balances>>) => {
     console.log(`${label}`);
-    console.log(`  user  ${nameA}: ${display(b.userA, decimalsA)}   ${nameB}: ${display(b.userB, decimalsB)}`);
-    console.log(`  vault ${nameA}: ${display(b.vaultA, decimalsA)}   ${nameB}: ${display(b.vaultB, decimalsB)}`);
+    console.log(
+      `  user  ${nameA}: ${display(b.userA, decimalsA)}   ${nameB}: ${display(
+        b.userB,
+        decimalsB
+      )}`
+    );
+    console.log(
+      `  vault ${nameA}: ${display(b.vaultA, decimalsA)}   ${nameB}: ${display(
+        b.vaultB,
+        decimalsB
+      )}`
+    );
   };
 
   // ── Swap A→B ──────────────────────────────────────────────────────────────
@@ -162,7 +203,12 @@ async function main() {
   report("Before A→B", before);
 
   const minOutB = expectedB(amountInA, market.price, decimalsA, decimalsB);
-  console.log(`\nSwapping ${display(amountInA, decimalsA)} ${nameA} → expecting ${display(minOutB, decimalsB)} ${nameB}...`);
+  console.log(
+    `\nSwapping ${display(amountInA, decimalsA)} ${nameA} → expecting ${display(
+      minOutB,
+      decimalsB
+    )} ${nameB}...`
+  );
 
   const sigAtoB = await program.methods
     .swapAToB(amountInA, minOutB)
@@ -180,7 +226,12 @@ async function main() {
   // 🇪🇸 NOTA: se devuelve exactamente lo que salió del primer swap, que es la
   // única forma de que la invariante A→B→A signifique algo.
   const minOutA = expectedA(receivedB, market.price, decimalsA, decimalsB);
-  console.log(`\nSwapping ${display(receivedB, decimalsB)} ${nameB} back → expecting ${display(minOutA, decimalsA)} ${nameA}...`);
+  console.log(
+    `\nSwapping ${display(
+      receivedB,
+      decimalsB
+    )} ${nameB} back → expecting ${display(minOutA, decimalsA)} ${nameA}...`
+  );
 
   const sigBtoA = await program.methods
     .swapBToA(receivedB, minOutA)
@@ -201,7 +252,9 @@ async function main() {
   console.log(`\n─── Round trip invariant ───`);
   console.log(`in:       ${display(amountInA, decimalsA)} ${nameA}`);
   console.log(`out:      ${display(returnedA, decimalsA)} ${nameA}`);
-  console.log(`retained: ${loss.toString()} base units (truncation, in favour of the pool)`);
+  console.log(
+    `retained: ${loss.toString()} base units (truncation, in favour of the pool)`
+  );
 
   if (returnedA.gt(amountInA)) {
     throw new Error(

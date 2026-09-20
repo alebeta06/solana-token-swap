@@ -77,7 +77,7 @@ describe("solana-token-swap", () => {
     if (code === undefined) {
       const raw =
         raised instanceof Error
-          ? (raised.stack ?? raised.message)
+          ? raised.stack ?? raised.message
           : String(raised);
       assert.fail(
         `expected ${expected}, but the call failed with something that is not ` +
@@ -150,12 +150,22 @@ describe("solana-token-swap", () => {
 
     if (deficitA > 0n) {
       await mintTo(
-        provider.connection, payer, mintA, authorityTokenA, payer, deficitA
+        provider.connection,
+        payer,
+        mintA,
+        authorityTokenA,
+        payer,
+        deficitA
       );
     }
     if (deficitB > 0n) {
       await mintTo(
-        provider.connection, payer, mintB, authorityTokenB, payer, deficitB
+        provider.connection,
+        payer,
+        mintB,
+        authorityTokenB,
+        payer,
+        deficitB
       );
     }
 
@@ -174,7 +184,11 @@ describe("solana-token-swap", () => {
   // mintA siga siendo el "bajo" frente a un mint recién creado.
   const createForeignMarket = async () => {
     const otherMintRaw = await createMint(
-      provider.connection, payer, authority.publicKey, null, DECIMALS_LOW
+      provider.connection,
+      payer,
+      authority.publicKey,
+      null,
+      DECIMALS_LOW
     );
     const [lowMint, highMint] =
       mintA.toBuffer().compare(otherMintRaw.toBuffer()) < 0
@@ -186,10 +200,12 @@ describe("solana-token-swap", () => {
       program.programId
     );
     const [foreignVaultA] = PublicKey.findProgramAddressSync(
-      [Buffer.from("vault_a"), market.toBuffer()], program.programId
+      [Buffer.from("vault_a"), market.toBuffer()],
+      program.programId
     );
     const [foreignVaultB] = PublicKey.findProgramAddressSync(
-      [Buffer.from("vault_b"), market.toBuffer()], program.programId
+      [Buffer.from("vault_b"), market.toBuffer()],
+      program.programId
     );
 
     await program.methods
@@ -206,10 +222,18 @@ describe("solana-token-swap", () => {
 
   before(async () => {
     const first = await createMint(
-      provider.connection, payer, authority.publicKey, null, DECIMALS_LOW
+      provider.connection,
+      payer,
+      authority.publicKey,
+      null,
+      DECIMALS_LOW
     );
     const second = await createMint(
-      provider.connection, payer, authority.publicKey, null, DECIMALS_HIGH
+      provider.connection,
+      payer,
+      authority.publicKey,
+      null,
+      DECIMALS_HIGH
     );
 
     // 🇪🇸 NOTA: el programa exige mint_a < mint_b. El orden lo decide la pubkey,
@@ -226,32 +250,51 @@ describe("solana-token-swap", () => {
       program.programId
     );
     [vaultAPda] = PublicKey.findProgramAddressSync(
-      [Buffer.from("vault_a"), marketPda.toBuffer()], program.programId
+      [Buffer.from("vault_a"), marketPda.toBuffer()],
+      program.programId
     );
     [vaultBPda] = PublicKey.findProgramAddressSync(
-      [Buffer.from("vault_b"), marketPda.toBuffer()], program.programId
+      [Buffer.from("vault_b"), marketPda.toBuffer()],
+      program.programId
     );
 
     authorityTokenA = await createAssociatedTokenAccount(
-      provider.connection, payer, mintA, authority.publicKey
+      provider.connection,
+      payer,
+      mintA,
+      authority.publicKey
     );
     authorityTokenB = await createAssociatedTokenAccount(
-      provider.connection, payer, mintB, authority.publicKey
+      provider.connection,
+      payer,
+      mintB,
+      authority.publicKey
     );
 
     // 🇪🇸 NOTA: ATA de mint B en una wallet distinta, para probar el constraint
     // de mint sin que Anchor rechace antes por cuenta mutable duplicada.
     const outsider = Keypair.generate();
     foreignTokenB = await createAssociatedTokenAccount(
-      provider.connection, payer, mintB, outsider.publicKey
+      provider.connection,
+      payer,
+      mintB,
+      outsider.publicKey
     );
 
     await mintTo(
-      provider.connection, payer, mintA, authorityTokenA, payer,
+      provider.connection,
+      payer,
+      mintA,
+      authorityTokenA,
+      payer,
       BigInt(baseUnits(1000, decimalsA).toString())
     );
     await mintTo(
-      provider.connection, payer, mintB, authorityTokenB, payer,
+      provider.connection,
+      payer,
+      mintB,
+      authorityTokenB,
+      payer,
       BigInt(baseUnits(1000, decimalsB).toString())
     );
 
@@ -347,7 +390,8 @@ describe("solana-token-swap", () => {
     it("rejects anyone who is not the market authority", async () => {
       const intruder = Keypair.generate();
       const sig = await provider.connection.requestAirdrop(
-        intruder.publicKey, anchor.web3.LAMPORTS_PER_SOL
+        intruder.publicKey,
+        anchor.web3.LAMPORTS_PER_SOL
       );
       await provider.connection.confirmTransaction(sig);
 
@@ -446,7 +490,10 @@ describe("solana-token-swap", () => {
       const expectedOut = baseUnits(2, decimalsB);
 
       const vaultBBefore = await getAccount(provider.connection, vaultBPda);
-      const userBBefore = await getAccount(provider.connection, authorityTokenB);
+      const userBBefore = await getAccount(
+        provider.connection,
+        authorityTokenB
+      );
 
       await program.methods
         .swapAToB(amountIn, new anchor.BN(0))
@@ -532,15 +579,24 @@ describe("solana-token-swap", () => {
     // mercado ni siquiera necesita bóvedas con fondos.
     it("rejects a swap on a market whose price was never set", async () => {
       const firstRaw = await createMint(
-        provider.connection, payer, authority.publicKey, null, DECIMALS_LOW
+        provider.connection,
+        payer,
+        authority.publicKey,
+        null,
+        DECIMALS_LOW
       );
       const secondRaw = await createMint(
-        provider.connection, payer, authority.publicKey, null, DECIMALS_HIGH
+        provider.connection,
+        payer,
+        authority.publicKey,
+        null,
+        DECIMALS_HIGH
       );
 
       // El orden canónico se recalcula para ESTE par. No hay nada que permita
       // suponer que el mint de 6 decimales vuelve a caer del lado A.
-      const firstIsLower = firstRaw.toBuffer().compare(secondRaw.toBuffer()) < 0;
+      const firstIsLower =
+        firstRaw.toBuffer().compare(secondRaw.toBuffer()) < 0;
       const freshMintA = firstIsLower ? firstRaw : secondRaw;
       const freshMintB = firstIsLower ? secondRaw : firstRaw;
       const freshDecimalsA = firstIsLower ? DECIMALS_LOW : DECIMALS_HIGH;
@@ -550,10 +606,12 @@ describe("solana-token-swap", () => {
         program.programId
       );
       const [freshVaultA] = PublicKey.findProgramAddressSync(
-        [Buffer.from("vault_a"), freshMarket.toBuffer()], program.programId
+        [Buffer.from("vault_a"), freshMarket.toBuffer()],
+        program.programId
       );
       const [freshVaultB] = PublicKey.findProgramAddressSync(
-        [Buffer.from("vault_b"), freshMarket.toBuffer()], program.programId
+        [Buffer.from("vault_b"), freshMarket.toBuffer()],
+        program.programId
       );
 
       await program.methods
@@ -566,13 +624,23 @@ describe("solana-token-swap", () => {
         .rpc();
 
       const userTokenA = await createAssociatedTokenAccount(
-        provider.connection, payer, freshMintA, authority.publicKey
+        provider.connection,
+        payer,
+        freshMintA,
+        authority.publicKey
       );
       const userTokenB = await createAssociatedTokenAccount(
-        provider.connection, payer, freshMintB, authority.publicKey
+        provider.connection,
+        payer,
+        freshMintB,
+        authority.publicKey
       );
       await mintTo(
-        provider.connection, payer, freshMintA, userTokenA, payer,
+        provider.connection,
+        payer,
+        freshMintA,
+        userTokenA,
+        payer,
         BigInt(baseUnits(10, freshDecimalsA).toString())
       );
 
