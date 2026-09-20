@@ -23,6 +23,9 @@ import * as os from "os";
 import * as path from "path";
 
 const KEYPAIR_PATH = path.join(os.homedir(), ".config/solana/id.json");
+const FAUCET_KEYPAIR_PATH =
+  process.env.FAUCET_KEYPAIR ??
+  path.join(os.homedir(), ".solana-keys/faucet.json");
 const MANIFEST_PATH = path.join(__dirname, "..", "devnet.json");
 
 const PRICE_DECIMALS = 6;
@@ -37,6 +40,36 @@ const pow10 = (n: number) => new anchor.BN(10).pow(new anchor.BN(n));
 function loadKeypair(file: string): Keypair {
   const secret = JSON.parse(fs.readFileSync(file, "utf-8"));
   return Keypair.fromSecretKey(new Uint8Array(secret));
+}
+
+/**
+ * The faucet keypair, which holds the mint authority of both mints.
+ *
+ * 🔴 NOTA: mint authority y nada más. Los swaps de este script los sigue
+ * firmando `payer` (`id.json`), que es quien tiene los tokens y las ATAs. Pasar
+ * el faucet como `user` de un swap no daría un error de permisos: movería los
+ * tokens de otra cuenta, o fallaría con `InvalidMint` al no tener ATAs.
+ *
+ * 🇪🇸 NOTA: se carga solo si falta saldo. Una corrida con token A suficiente no
+ * necesita acuñar, y no debe exigir un fichero que solo tiene quien despliega.
+ */
+function loadMintAuthority(manifest: any): Keypair {
+  if (!fs.existsSync(FAUCET_KEYPAIR_PATH)) {
+    throw new Error(
+      `Minting needs the faucet keypair: it holds the mint authority of both mints ` +
+        `since phase 8, and ${KEYPAIR_PATH} no longer does. ` +
+        `${FAUCET_KEYPAIR_PATH} does not exist — point FAUCET_KEYPAIR at the file.`
+    );
+  }
+  const faucet = loadKeypair(FAUCET_KEYPAIR_PATH);
+  const expected = manifest.faucet?.pubkey;
+  if (expected && faucet.publicKey.toBase58() !== expected) {
+    throw new Error(
+      `devnet.json records the faucet as ${expected}, but ${FAUCET_KEYPAIR_PATH} holds ` +
+        `${faucet.publicKey.toBase58()}. Refusing to sign with the wrong key.`
+    );
+  }
+  return faucet;
 }
 
 /** Misma aritmética que el programa: todas las multiplicaciones antes de las divisiones. */
@@ -142,8 +175,10 @@ async function main() {
 
   const amountInA = new anchor.BN(AMOUNT_IN_A).mul(pow10(decimalsA));
 
-  // 🇪🇸 NOTA: la mint authority es este mismo payer, así que si falta token A
-  // para el demo nos lo acuñamos en vez de abortar.
+  // 🇪🇸 NOTA: si falta token A para el demo nos lo acuñamos en vez de abortar,
+  // pero la mint authority YA NO es este payer: la tiene el faucet desde la
+  // fase 8. El fee payer sigue siendo `payer`; lo único que cambia de manos es
+  // la firma de la autoridad.
   if (new anchor.BN(ataA.amount.toString()).lt(amountInA)) {
     const shortfall = amountInA.sub(new anchor.BN(ataA.amount.toString()));
     console.log(
@@ -151,10 +186,10 @@ async function main() {
     );
     await mintTo(
       connection,
-      payer,
+      payer, // fee payer
       mintA,
       ataA.address,
-      payer,
+      loadMintAuthority(manifest), // mint authority
       BigInt(shortfall.toString())
     );
   }

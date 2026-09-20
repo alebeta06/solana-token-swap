@@ -21,6 +21,9 @@ import * as os from "os";
 import * as path from "path";
 
 const KEYPAIR_PATH = path.join(os.homedir(), ".config/solana/id.json");
+const FAUCET_KEYPAIR_PATH =
+  process.env.FAUCET_KEYPAIR ??
+  path.join(os.homedir(), ".solana-keys/faucet.json");
 const MANIFEST_PATH = path.join(__dirname, "..", "devnet.json");
 
 // 🇪🇸 NOTA: price = 2_000_000 con PRICE_DECIMALS = 6 significa "1 A vale 2 B".
@@ -33,6 +36,37 @@ const LIQUIDITY_B = 2_000;
 function loadKeypair(file: string): Keypair {
   const secret = JSON.parse(fs.readFileSync(file, "utf-8"));
   return Keypair.fromSecretKey(new Uint8Array(secret));
+}
+
+/**
+ * The faucet keypair, which holds the mint authority of both mints.
+ *
+ * 🔴 NOTA: es mint authority Y NADA MÁS. No es la market authority, no paga
+ * rent y no firma ninguna instrucción del programa: `set_price` con esta clave
+ * falla con `Unauthorized`. Todo lo demás lo sigue firmando `id.json`.
+ *
+ * 🇪🇸 NOTA: se carga solo cuando hay que acuñar de verdad. Cargarla al arrancar
+ * convertiría en un fallo la corrida normal —bóvedas llenas, nada que acuñar—
+ * de cualquiera que no tenga el fichero, que es el caso de todo el mundo menos
+ * quien desplegó.
+ */
+function loadMintAuthority(manifest: any): Keypair {
+  if (!fs.existsSync(FAUCET_KEYPAIR_PATH)) {
+    throw new Error(
+      `Minting needs the faucet keypair: it holds the mint authority of both mints ` +
+        `since phase 8, and ${KEYPAIR_PATH} no longer does. ` +
+        `${FAUCET_KEYPAIR_PATH} does not exist — point FAUCET_KEYPAIR at the file.`
+    );
+  }
+  const faucet = loadKeypair(FAUCET_KEYPAIR_PATH);
+  const expected = manifest.faucet?.pubkey;
+  if (expected && faucet.publicKey.toBase58() !== expected) {
+    throw new Error(
+      `devnet.json records the faucet as ${expected}, but ${FAUCET_KEYPAIR_PATH} holds ` +
+        `${faucet.publicKey.toBase58()}. Refusing to sign with the wrong key.`
+    );
+  }
+  return faucet;
 }
 
 const baseUnits = (amount: number, decimals: number) =>
@@ -150,8 +184,12 @@ async function main() {
   if (!needsA && !needsB) {
     console.log("Vaults already funded, nothing to top up");
   } else {
-    // 🇪🇸 NOTA: acuñamos a nuestra propia ATA primero. La mint authority es
-    // este mismo payer, que es lo que hará falta para el faucet en la fase 8.
+    // 🇪🇸 NOTA: acuñamos a nuestra propia ATA primero, y de ahí a las bóvedas
+    // con add_liquidity. Los dos roles del `mintTo` son distintos y no se
+    // pueden mezclar: el fee payer sigue siendo `payer` (paga la fee y la renta
+    // de la ATA), y la autoridad es el faucet (es quien puede acuñar).
+    const mintAuthority = loadMintAuthority(manifest);
+
     const ataA = await getOrCreateAssociatedTokenAccount(
       connection,
       payer,
@@ -173,10 +211,10 @@ async function main() {
       );
       await mintTo(
         connection,
-        payer,
+        payer, // fee payer y dueño de la ATA destino
         mintA,
         ataA.address,
-        payer,
+        mintAuthority, // quien firma como mint authority
         BigInt(deficitA.toString())
       );
     }
@@ -191,7 +229,7 @@ async function main() {
         payer,
         mintB,
         ataB.address,
-        payer,
+        mintAuthority,
         BigInt(deficitB.toString())
       );
     }
