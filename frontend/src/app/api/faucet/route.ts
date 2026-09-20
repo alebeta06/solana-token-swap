@@ -35,7 +35,7 @@ import {
   unpackAccount,
 } from "@solana/spl-token";
 import { manifest } from "@/lib/manifest";
-import { rpcEndpoint } from "@/lib/rpc";
+import { serverRpcEndpoint } from "@/lib/rpc";
 import { BlockhashRejectedError, awaitLanding, sendWithFreshBlockhash } from "@/lib/confirm";
 import {
   FaucetInputError,
@@ -204,7 +204,12 @@ export async function POST(request: Request) {
     );
   }
 
-  const connection = new Connection(rpcEndpoint(), "confirmed");
+  // 🔴 `serverRpcEndpoint()`, NO `rpcEndpoint()`. La clave que usa el navegador
+  // está restringida por dominio, y una función serverless no envía `Origin`:
+  // el proveedor le devuelve 403 y el faucet cae con "failed to get info about
+  // account". Los swaps no se enteraban, porque salen del navegador. Ver
+  // `@/lib/rpc`.
+  const connection = new Connection(serverRpcEndpoint(), "confirmed");
   const drops = dropAmounts(manifest);
 
   try {
