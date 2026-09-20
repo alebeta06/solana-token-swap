@@ -122,6 +122,12 @@ anchor test --skip-local-validator   # 27 tests del programa (necesita el valida
 yarn --cwd frontend test             # 31 tests de vitest
 ```
 
+**Los dos alcances van en `strict`.** El de la raíz no lo estaba —`tests/` y
+`scripts/` se comprobaban sin `noImplicitAny`— y se activó en la Fase 9 al preparar los
+badges: **cero errores**, así que el hueco se cerró en una línea. Comprobado que `strict`
+muerde de verdad con una sonda de `any` implícito, que falla con `TS7006`; un
+`typecheck` verde no distingue por sí solo "no hay errores" de "no se está comprobando".
+
 **El `include` del tsconfig raíz es explícito y debe seguir siéndolo.** Sin `include`
 ni `exclude`, TypeScript arrastra *todo* el subárbol: hasta la Fase 8 el alcance raíz
 eran 37 ficheros, 29 de ellos de `frontend/`, comprobados por segunda vez con la
