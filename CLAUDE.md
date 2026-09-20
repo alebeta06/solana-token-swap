@@ -4,10 +4,17 @@ Proyecto del Máster CodeCrypto (Blockchain Engineering & AI), Módulo 15 — To
 Swap de tokens SPL con precio fijo, en Anchor. **Primera experiencia del autor con
 Solana y Rust** — explicar antes de implementar, comparando siempre con Solidity/EVM.
 
-> ⚠️ **Estado actual: Fases 0–7 completadas. La Fase 8 está EN CURSO — su paso 1
-> (metadata de Metaplex) está cerrado; el siguiente es el paso 2.**
-> Son 11 fases (0 a 10). Ver "En curso: Fase 8", "Plan completo — las 11 fases" y
-> "Estado del programa".
+> ⚠️ **Estado actual: Fases 0–8 completadas — el faucet funciona en producción.
+> La Fase 9 está EN CURSO: el README de la raíz está escrito (bloque 2); quedan el
+> deploy documentado en Vercel y el verified build.**
+> Son 11 fases (0 a 10). Ver "Plan completo — las 11 fases" y "Estado del programa".
+
+> 🔴 **Tarea pendiente, anterior a cerrar la Fase 9 — REGRESIÓN, no limitación de
+> diseño:** `scripts/swap-demo.ts` y `scripts/seed-market.ts` tienen que leer
+> `FAUCET_KEYPAIR` para sus `mintTo`. Llevan roto desde el traspaso de la mint
+> authority en la Fase 8 y no se notó porque no se han vuelto a ejecutar. Un script
+> roto en el repo es algo que el evaluador puede intentar correr. Ver "Efecto
+> colateral abierto".
 
 ---
 
@@ -272,7 +279,18 @@ entrada, el PDA del mercado la salida. Mints completos. Programas con
 2. **Los eventos `emit!` no se decodifican**, aunque las instrucciones del mismo IDL sí.
    Quedan como `Program data: <base64>` en los logs.
 3. **Metaplex Token Metadata no se decodifica:** devuelve `{"kind":"unknown"}` vacío y
-   `errors: []` — falla en silencio, sin `CURRENTLY_UNSUPPORTED`.
+   `errors: []` — falla en silencio, sin `CURRENTLY_UNSUPPORTED`. **Se suple leyendo el
+   `data` a mano** — verificado en la Fase 9 sobre las dos metadatas:
+
+   ```bash
+   solana account <PDA_de_la_metadata> --output json --url devnet
+   ```
+
+   Layout: **1 byte de `key`** (`4` = `MetadataV1`), **32 bytes de update authority**,
+   **32 de mint**, y luego `name` / `symbol` / `uri`, cada uno con 4 bytes de longitud
+   por delante. El mint que sale ahí sirve de control: si no cuadra con el manifest, se
+   está leyendo otra cuenta. Resultado en la Fase 9: update authority `9aaPGTS7…` en
+   DEMO6 y DEMO9 — **no el faucet**, que es lo que había que descartar.
 4. **`kind: "unknown"` en cuentas que sí decodifica** (el propio `MarketAccount`). No
    enrutar por `kind`: mirar si hay `decoded`.
 
@@ -585,11 +603,16 @@ defecto y solo firma con `--execute`:
 
 Firmas: DEMO6 `4BEabMLj…`, DEMO9 `3DF6be5a…`, fondeo `3ob27XJd…`.
 
-⚠️ **Efecto colateral abierto:** `scripts/seed-market.ts` y `scripts/swap-demo.ts`
-acuñan con `~/.config/solana/id.json`, que ya no es mint authority. Fallarán **cuando
-necesiten acuñar** — seed-market solo si hay déficit en las bóvedas (hoy están llenas,
-así que hoy es no-op); swap-demo siempre que le falte saldo. El arreglo es leer la
-keypair del faucet de `FAUCET_KEYPAIR` para el `mintTo`. Sin hacer.
+🔴 **REGRESIÓN ABIERTA, no una limitación de diseño:** `scripts/seed-market.ts` y
+`scripts/swap-demo.ts` acuñan con `~/.config/solana/id.json`, que ya no es mint
+authority. Fallarán **cuando necesiten acuñar** — seed-market solo si hay déficit en
+las bóvedas (hoy están llenas, así que hoy es no-op); swap-demo siempre que le falte
+saldo. El arreglo es leer la keypair del faucet de `FAUCET_KEYPAIR` para el `mintTo`.
+**Sin hacer, y es tarea pendiente de la Fase 9.**
+
+Lo que lo dejó pasar no fue el traspaso, fue que **nadie volvió a ejecutar los
+scripts**: un script solo se rompe a la vista cuando se corre. Documentado como
+regresión en el README de la raíz ("Known limitations"), no como decisión.
 
 #### Paso 3 — el único sitio del proyecto con una clave privada en un servidor
 
@@ -669,8 +692,8 @@ cualquier visitante consiga tokens sin pedírselos al desplegador.
 | 5    | Endurecer la suite                               | ✅     |
 | 6    | Deploy devnet + mints propias + script de seed   | ✅     |
 | 7    | Frontend Next.js                                 | ✅     |
-| 8    | Faucet + metadata de Metaplex (DEMO6/DEMO9)      | 🔄 en curso (paso 1 de 4 ✅) |
-| 9    | Vercel + README + diagramas + **verified build** | ⬜     |
+| 8    | Faucet + metadata de Metaplex (DEMO6/DEMO9)      | ✅     |
+| 9    | Vercel + README + diagramas + **verified build** | 🔄 en curso (README de la raíz ✅) |
 | 10   | Video + entrega GitHub/GitLab                    | ⬜     |
 
 ### El verified build de la Fase 9
