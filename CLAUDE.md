@@ -9,13 +9,6 @@ Solana y Rust** — explicar antes de implementar, comparando siempre con Solidi
 > deploy documentado en Vercel y el verified build.**
 > Son 11 fases (0 a 10). Ver "Plan completo — las 11 fases" y "Estado del programa".
 
-> 🔴 **Tarea pendiente, anterior a cerrar la Fase 9 — REGRESIÓN, no limitación de
-> diseño:** `scripts/swap-demo.ts` y `scripts/seed-market.ts` tienen que leer
-> `FAUCET_KEYPAIR` para sus `mintTo`. Llevan roto desde el traspaso de la mint
-> authority en la Fase 8 y no se notó porque no se han vuelto a ejecutar. Un script
-> roto en el repo es algo que el evaluador puede intentar correr. Ver "Efecto
-> colateral abierto".
-
 ---
 
 ## ⛔ Reglas duras
@@ -609,16 +602,28 @@ defecto y solo firma con `--execute`:
 
 Firmas: DEMO6 `4BEabMLj…`, DEMO9 `3DF6be5a…`, fondeo `3ob27XJd…`.
 
-🔴 **REGRESIÓN ABIERTA, no una limitación de diseño:** `scripts/seed-market.ts` y
-`scripts/swap-demo.ts` acuñan con `~/.config/solana/id.json`, que ya no es mint
-authority. Fallarán **cuando necesiten acuñar** — seed-market solo si hay déficit en
-las bóvedas (hoy están llenas, así que hoy es no-op); swap-demo siempre que le falte
-saldo. El arreglo es leer la keypair del faucet de `FAUCET_KEYPAIR` para el `mintTo`.
-**Sin hacer, y es tarea pendiente de la Fase 9.**
+✅ **Efecto colateral CERRADO en la Fase 9** (era una regresión, no una limitación de
+diseño). `scripts/seed-market.ts` y `scripts/swap-demo.ts` acuñaban con
+`~/.config/solana/id.json`, que dejó de ser mint authority. Ahora leen la keypair del
+faucet de **`FAUCET_KEYPAIR`** (una **ruta de fichero** en los scripts, default
+`~/.solana-keys/faucet.json` — ojo: en el frontend la variable del mismo nombre lleva
+el **array JSON de 64 números**, porque una función serverless no tiene fichero que
+leer).
 
-Lo que lo dejó pasar no fue el traspaso, fue que **nadie volvió a ejecutar los
-scripts**: un script solo se rompe a la vista cuando se corre. Documentado como
-regresión en el README de la raíz ("Known limitations"), no como decisión.
+⚠️ **Los dos roles del `mintTo` no se pueden mezclar.** Su firma es
+`mintTo(connection, feePayer, mint, destino, authority, amount)`: el **2.º** argumento
+paga la fee y sigue siendo `id.json`; solo cambió el **5.º**. La transacción lleva
+**dos firmantes distintos** —verificado on-chain: `9aaPGTS7…` writable como fee payer y
+`GTxTmFKt…` no-writable como `mintAuthority`—. Si se pasa el faucet como autoridad del
+programa, el `mintTo` sigue funcionando y lo que falla después es `set_price` con
+`Unauthorized`.
+
+La keypair se carga **solo si hay que acuñar de verdad**: una corrida con las bóvedas
+llenas no debe exigir un fichero que solo tiene quien desplegó.
+
+**Lo que lo dejó pasar no fue el traspaso, fue que nadie volvió a ejecutar los
+scripts** — un script solo se rompe a la vista cuando se corre. Es el mismo patrón de
+"Para el próximo módulo": sin CI, un comando roto sobrevive meses.
 
 #### Paso 3 — el único sitio del proyecto con una clave privada en un servidor
 

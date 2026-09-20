@@ -696,13 +696,32 @@ Six scripts in `scripts/`, run with `npx ts-node scripts/<name>.ts` against the 
 | Script | What it does | Safe to re-run? |
 |---|---|---|
 | `create-mints.ts` | Creates the two demo mints, works out the canonical `mint_a < mint_b` order and writes the manifest | ❌ **No.** It mints two brand new tokens and overwrites `devnet.json`, orphaning the deployed market. Only for bootstrapping a fresh deployment. |
-| `seed-market.ts` | Initialises the market, sets the price, tops up both vaults | ⚠️ Idempotent in principle — it reads existing state, sets the price only if unset and refills only the shortfall — but **it can no longer mint**. See [Known limitations](#known-limitations). |
-| `swap-demo.ts` | Sends a real A→B then B→A round trip and checks nothing was created out of thin air | ⚠️ **Broken today** when it needs to mint. See [Known limitations](#known-limitations). |
+| `seed-market.ts` | Initialises the market, sets the price, tops up both vaults | ✅ Idempotent. Reads existing state, sets the price only if unset and refills only the shortfall. Needs the faucet keypair **only when a vault is short** — see below. |
+| `swap-demo.ts` | Sends a real A→B then B→A round trip and checks nothing was created out of thin air | ✅ Re-runnable. Each run sends two new transactions and mints itself whatever token A it is short of. |
 | `upload-metadata.ts` | Uploads the logo and the JSON of both tokens to IPFS via Pinata, records the URIs | ✅ Re-runnable — content-addressed, so the same input gives the same CID. Needs Pinata credentials in `.env`. |
 | `create-token-metadata.ts` | Creates the Metaplex metadata account of each mint | ❌ **No.** `CreateMetadataAccountV3` fails if the account exists, and it needs the **mint authority** to sign — which is now the faucet, not `id.json`. |
 | `transfer-mint-authority.ts` | Hands the mint authority of both mints to the faucet keypair | ❌ Already done. Dry-run by default; only signs with `--execute`. |
 
 To reproduce the deployment from scratch: `anchor build` → `anchor deploy --provider.cluster devnet` → `create-mints.ts` → `seed-market.ts` → `upload-metadata.ts` → `create-token-metadata.ts` → `transfer-mint-authority.ts` → `swap-demo.ts`.
+
+### 🔴 Two keypairs, two roles — the scripts do not mix them
+
+Since phase 8 the mint authority of both mints belongs to the **faucet keypair**, not to the deployer. So the two scripts that mint read it from **`FAUCET_KEYPAIR`**, defaulting to `~/.solana-keys/faucet.json`:
+
+```bash
+FAUCET_KEYPAIR=~/.solana-keys/faucet.json npx ts-node scripts/seed-market.ts
+```
+
+⚠️ **Here `FAUCET_KEYPAIR` is a path to the keypair file.** The frontend has an environment variable of the same name holding the **JSON array of 64 numbers** instead, because a serverless function has no file to read. Same name, two formats, two places — do not copy a value from one to the other.
+
+| Role | Key | Signs |
+|---|---|---|
+| **Mint authority** | the faucet | the `mintTo` calls, and nothing else |
+| **Everything else** | `~/.config/solana/id.json` | `initialize_market`, `set_price`, `add_liquidity`, both swaps, and every fee and rent payment |
+
+Mixing them does not fail loudly at the mint: it fails later, at `set_price`, with `Unauthorized`. A `mintTo` carries **two** distinct signers — the fee payer and the authority — and only the second one moved.
+
+The keypair is read **only when a mint is actually needed**, so a run with full vaults and enough tokens does not require a file that only the deployer has.
 
 ⚠️ **That order is not arbitrary.** `create-token-metadata.ts` must run **before** `transfer-mint-authority.ts`, because creating metadata requires the mint authority to sign. Reverse the two and only the faucet could ever create the metadata.
 
@@ -712,16 +731,7 @@ Against the existing deployment, there is nothing to run: the market is seeded a
 
 ## Known limitations
 
-Written as they are: some are decisions, one is a regression.
-
-### 🔴 `swap-demo.ts` and `seed-market.ts` cannot mint any more — a regression
-
-Both scripts mint with `~/.config/solana/id.json`, which **stopped being the mint authority** when phase 8 handed it to the faucet. This is not a design limitation, it is a real regression: it has been broken since that transfer and went unnoticed because neither script has been run since.
-
-- `swap-demo.ts` fails whenever it is short of token A, which is whenever it needs to top itself up.
-- `seed-market.ts` fails only if a vault is below its target. Today both are full, so today it is a no-op and passes.
-
-The fix is to read the faucet keypair from `FAUCET_KEYPAIR` for the `mintTo` calls. **Not done yet** — and it matters more than a broken script usually would, because an evaluator may well try to run it.
+Written as they are — decisions, not oversights.
 
 ### The faucet limits by balance, and that does not stop a determined drain
 
