@@ -1,5 +1,7 @@
 # solana-token-swap
 
+![status: program complete](https://img.shields.io/badge/status-program%20complete-14F195) ![Rust: rustc (SBF) 1.95-dev](https://img.shields.io/badge/Rust-rustc%20%28SBF%29%201.95--dev-2b2b3d?logo=rust&logoColor=white) ![Anchor: 1.2.0](https://img.shields.io/badge/Anchor-1.2.0-9945FF) ![Solana: 4.2.2](https://img.shields.io/badge/Solana-4.2.2-9945FF?logo=solana&logoColor=white) ![TypeScript: strict](https://img.shields.io/badge/TypeScript-strict-14F195?logo=typescript&logoColor=white) ![Next.js: 15](https://img.shields.io/badge/Next.js-15-2b2b3d?logo=nextdotjs&logoColor=white) ![tests: 27 + 96 passing](https://img.shields.io/badge/tests-27%20%2B%2096%20passing-14F195) ![typecheck: clean](https://img.shields.io/badge/typecheck-clean-14F195) ![network: Solana Devnet](https://img.shields.io/badge/network-Solana%20Devnet-9945FF?logo=solana&logoColor=white) [![demo: live](https://img.shields.io/badge/demo-live-14F195?logo=vercel&logoColor=white)](https://solana-token-swap.vercel.app/) ![license: MIT](https://img.shields.io/badge/license-MIT-14F195)
+
 A fixed-price SPL token swap on Solana, written in Rust with Anchor 1.2.0.
 
 My first Solana program, coming from Solidity and Cairo. Built as Module 15 of the CodeCrypto Master's in Blockchain Engineering & AI.
