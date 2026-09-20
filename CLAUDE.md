@@ -605,10 +605,20 @@ Firmas: DEMO6 `4BEabMLj…`, DEMO9 `3DF6be5a…`, fondeo `3ob27XJd…`.
 ✅ **Efecto colateral CERRADO en la Fase 9** (era una regresión, no una limitación de
 diseño). `scripts/seed-market.ts` y `scripts/swap-demo.ts` acuñaban con
 `~/.config/solana/id.json`, que dejó de ser mint authority. Ahora leen la keypair del
-faucet de **`FAUCET_KEYPAIR`** (una **ruta de fichero** en los scripts, default
-`~/.solana-keys/faucet.json` — ojo: en el frontend la variable del mismo nombre lleva
-el **array JSON de 64 números**, porque una función serverless no tiene fichero que
-leer).
+faucet de **`FAUCET_KEYPAIR_PATH`**, default `~/.solana-keys/faucet.json`.
+
+⚠️ **El nombre distingue el formato, y eso es deliberado.** Las dos variables existen y
+no son intercambiables:
+
+| Variable | Quién la lee | Qué contiene |
+| -------- | ------------ | ------------ |
+| `FAUCET_KEYPAIR_PATH` | los scripts, en local | una **ruta** al fichero de la keypair |
+| `FAUCET_KEYPAIR` | el route handler del faucet, en Vercel | el **array JSON de 64 números** |
+
+Se llamaban igual hasta la Fase 9, y eso es un footgun que no se arregla documentándolo:
+el valor de una no funciona en la otra y falla de forma confusa. **El sufijo `_PATH` es
+el arreglo.** La del frontend no se renombra: es la que está configurada en el panel de
+Vercel.
 
 ⚠️ **Los dos roles del `mintTo` no se pueden mezclar.** Su firma es
 `mintTo(connection, feePayer, mint, destino, authority, amount)`: el **2.º** argumento

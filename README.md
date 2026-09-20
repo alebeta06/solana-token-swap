@@ -706,13 +706,20 @@ To reproduce the deployment from scratch: `anchor build` → `anchor deploy --pr
 
 ### 🔴 Two keypairs, two roles — the scripts do not mix them
 
-Since phase 8 the mint authority of both mints belongs to the **faucet keypair**, not to the deployer. So the two scripts that mint read it from **`FAUCET_KEYPAIR`**, defaulting to `~/.solana-keys/faucet.json`:
+Since phase 8 the mint authority of both mints belongs to the **faucet keypair**, not to the deployer. So the scripts that mint read it from **`FAUCET_KEYPAIR_PATH`**, defaulting to `~/.solana-keys/faucet.json`:
 
 ```bash
-FAUCET_KEYPAIR=~/.solana-keys/faucet.json npx ts-node scripts/seed-market.ts
+FAUCET_KEYPAIR_PATH=~/.solana-keys/faucet.json npx ts-node scripts/seed-market.ts
 ```
 
-⚠️ **Here `FAUCET_KEYPAIR` is a path to the keypair file.** The frontend has an environment variable of the same name holding the **JSON array of 64 numbers** instead, because a serverless function has no file to read. Same name, two formats, two places — do not copy a value from one to the other.
+**The name says which form the value takes**, because the two are not interchangeable:
+
+| Variable | Read by | Holds |
+|---|---|---|
+| `FAUCET_KEYPAIR_PATH` | the scripts, locally | a **path** to the keypair file |
+| `FAUCET_KEYPAIR` | the frontend's faucet route, on Vercel | the **JSON array of 64 numbers** itself — a serverless function has no file to read |
+
+They were once the same name, which is a footgun a paragraph of documentation cannot fix: the value from one silently does not work in the other. The `_PATH` suffix is the fix.
 
 | Role | Key | Signs |
 |---|---|---|
