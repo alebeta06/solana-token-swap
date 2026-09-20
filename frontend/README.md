@@ -10,10 +10,12 @@ yarn sync:onchain   # ⚠️ ver abajo
 yarn dev            # http://localhost:3000
 ```
 
-Optional `.env.local` (see `.env.local.example`): `NEXT_PUBLIC_RPC_URL` for a
-dedicated devnet RPC. Without it the app uses `clusterApiUrl("devnet")`, which is
-rate-limited but enough for a demo. ⚠️ Si pones uno propio, lee **"Requisitos del
-RPC"** más abajo: no hace falta WebSocket, y eso no es casualidad.
+Optional `.env.local` (see `.env.local.example`): **dos** variables de RPC, una
+por lado — `NEXT_PUBLIC_RPC_URL` para el navegador y `SOLANA_RPC_URL` para el
+route handler del faucet. Sin ellas todo cae a `clusterApiUrl("devnet")`, con
+rate limit pero suficiente para una demo. ⚠️ Si pones uno propio, lee
+**"Requisitos del RPC"** y **"Los dos endpoints"** más abajo: no hace falta
+WebSocket, y las dos variables no son redundancia.
 
 Para que el faucet funcione en local hace falta además `FAUCET_KEYPAIR` — ver
 "El faucet" más abajo. Sin ella la web va entera menos `/api/faucet`, que
@@ -114,10 +116,73 @@ el literal antes de aplicarlo. Mismo patrón que `scripts/swap-demo.ts`.
 Wallet Standard y se anuncian solas; el adapter las recoge. `@solana/wallet-adapter-wallets`
 no está instalado a propósito.
 
+## 🔴 Los dos endpoints RPC — cuál usa cada lado, y por qué son dos
+
+| Variable | La lee | Prefijo `NEXT_PUBLIC_` | ¿Restringir por dominio? |
+| -------- | ------ | ---------------------- | ------------------------ |
+| `NEXT_PUBLIC_RPC_URL` | El **navegador** (`providers.tsx` → swaps, saldos, mercado) | **Sí**, a propósito | **Sí** — está expuesta |
+| `SOLANA_RPC_URL` | El **servidor**, y solo `app/api/faucet/route.ts` | **No**, a propósito | **No** — y no puede |
+
+Las dos son opcionales y las resuelve `src/lib/rpc.ts`, que es el único sitio que
+lee ninguna de las dos:
+
+```
+rpcEndpoint()        →  NEXT_PUBLIC_RPC_URL                    → clusterApiUrl(devnet)
+serverRpcEndpoint()  →  SOLANA_RPC_URL → NEXT_PUBLIC_RPC_URL   → clusterApiUrl(devnet)
+```
+
+El fallback del servidor a la pública mantiene en pie un despliegue que solo tenga
+configurada una — el caso de desarrollo local, donde no hay restricción de dominio
+que molestar.
+
+### Por qué la del servidor NO puede llevar el prefijo público
+
+Porque el prefijo es lo contrario de lo que hace falta aquí. Next sustituye en el
+JavaScript que descarga el navegador, literalmente y en tiempo de build, el valor de
+toda variable que lo lleve. Con `NEXT_PUBLIC_SOLANA_RPC_URL` quedaría publicada la
+única de las dos keys que **no** está restringida por dominio: la que cualquiera
+podría usar desde cualquier sitio.
+
+Dicho al revés, las dos protecciones son cada una para su lado:
+
+- La key del navegador **está expuesta y no hay forma de que no lo esté**. Lo que la
+  protege es restringirla por dominio en el panel del proveedor.
+- La key del servidor **no se expone nunca**. Lo que la protege es el nombre de la
+  variable, que es lo mismo que protege `FAUCET_KEYPAIR`.
+
+### El 403 que costó el faucet en producción
+
+Restringir por dominio la key y usarla en los dos lados **rompe solo el servidor**, y
+por eso es confuso: los swaps salían del navegador, que envía
+`Origin: https://solana-token-swap.vercel.app` y pasa el filtro. La función serverless
+**no envía ninguna cabecera `Origin`**, así que el proveedor la rechazaba:
+
+```
+[faucet] mint failed: Error: failed to get info about account Cxgf…:
+Error: 403 Forbidden
+  at gF.getAccountInfo (.next/server/app/api/faucet/route.js)
+```
+
+El síntoma no menciona ni la key ni el dominio: dice que no pudo leer una cuenta. Con
+la web mitad funcionando —swap sí, faucet no— la hipótesis natural es la keypair del
+faucet o el manifest, que es donde no está el problema. **La pista es que falle
+exactamente lo que se ejecuta en el servidor.**
+
+### Los dos lados NO necesitan el mismo nodo
+
+Era un requisito escrito en `rpc.ts` y **ya no aplica** — con endpoints distintos,
+además, sería imposible de cumplir. Existía porque un desfase de propagación entre
+nodos se veía como un faucet que "no hizo nada", y lo que lo arregló no fue compartir
+la URL —un proveedor sirve muchos nodos detrás de una, así que compartirla nunca
+garantizó nada— sino `minContextSlot`: el handler devuelve el slot en que confirmó y
+el navegador lo exige al releer los saldos, reintentando mientras algún nodo vaya por
+detrás. Ver "Leer justo después de escribir" más abajo.
+
 ## ⚠️ Requisitos del RPC — léelo antes de poner uno propio
 
 **Cualquier RPC de devnet que sirva HTTP vale. Este proyecto NO necesita WebSocket.**
-Si pones el tuyo en `NEXT_PUBLIC_RPC_URL`, esto es lo que tiene que soportar:
+Esto es lo que tiene que soportar el que pongas — en `NEXT_PUBLIC_RPC_URL`, en
+`SOLANA_RPC_URL` o en las dos: la lista es la misma para los dos lados.
 
 | Necesita | Método | Para qué |
 | -------- | ------ | -------- |
@@ -460,10 +525,16 @@ En *Settings → Environment Variables*, **Production**:
 | Variable | Valor |
 | -------- | ----- |
 | `FAUCET_KEYPAIR` | El array JSON de 64 números del fichero de la keypair, en una línea |
-| `NEXT_PUBLIC_RPC_URL` | Opcional, un RPC de devnet dedicado |
+| `NEXT_PUBLIC_RPC_URL` | Opcional. El RPC del navegador — **restringido por dominio** |
+| `SOLANA_RPC_URL` | Opcional. El RPC del faucet — **sin restricción de dominio** |
 
 `FAUCET_KEYPAIR` no se marca como pública ni se renombra con el prefijo. El fichero de
 la keypair **no está en el repo** y no debe estarlo.
+
+🔴 **Las dos URLs de RPC apuntan a apps distintas del proveedor, no a la misma key.**
+Si `SOLANA_RPC_URL` falta, el handler cae a la pública, y si esa está restringida por
+dominio el faucet responde 502 en producción aunque funcione en local. Ver "Los dos
+endpoints RPC" arriba.
 
 ## Estado de verificación
 
