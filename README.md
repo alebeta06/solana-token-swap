@@ -644,6 +644,8 @@ The "fresh clone" column was measured by cloning the repo into an empty director
 
 **The Rust version is pinned** in [`rust-toolchain.toml`](rust-toolchain.toml), not `stable`, so that a new clippy release cannot turn CI red with no change to the code. The price is that new lints stay invisible until the version is bumped by hand, in a commit of its own.
 
+**The runner image is pinned too**, to `ubuntu-24.04` instead of `ubuntu-latest`, for the same reason: `ubuntu-latest` moves to Ubuntu 26.04 between 2026-10-19 and 2026-11-19, and a new image can break a build that nobody touched. It is not pin-and-forget: GitHub only supports the latest two versions of an OS and retires the older one. **Review it when GitHub announces the next Ubuntu LTS on its runners** (28.04, after its April 2028 release), because from then 24.04 is the one being deprecated. Announcements land in [actions/runner-images](https://github.com/actions/runner-images/issues).
+
 ### Three pairs of tools, and which half of the repo each checks
 
 **The repo has two scopes, and every quality tool in it covers exactly one of them.** That is deliberate, and it is the single easiest thing to get wrong here: ⚠️ **running one half and believing you ran both has produced false confidence twice.**

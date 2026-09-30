@@ -7,11 +7,20 @@ on:
   push:
   pull_request:
 
+# The runner image is pinned, like Rust in rust-toolchain.toml: with
+# `ubuntu-latest` a new image (26.04 rolls out from 2026-10-19) could turn CI
+# red with no change to the code. The price is bumping it by hand, and it is
+# not pin-and-forget: GitHub supports only the latest two Ubuntu versions and
+# retires the older one. Review when GitHub announces the next LTS on its
+# runners (28.04, expected after its April 2028 release) — from then 24.04 is
+# the third version, deprecated and later removed. Announcements:
+# https://github.com/actions/runner-images/issues
+
 jobs:
   rust:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       # With no argument, rustup installs the version in rust-toolchain.toml.
       # It runs before the cache so the cache key sees the right rustc.
       - run: rustup toolchain install
@@ -21,13 +30,13 @@ jobs:
       - run: cargo test -p solana-token-swap --lib
 
   frontend:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: frontend
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 24
           cache: yarn
