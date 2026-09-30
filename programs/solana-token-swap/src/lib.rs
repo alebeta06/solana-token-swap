@@ -8,6 +8,9 @@ declare_id!("BJ7GHy1zRe1VKuKUZU2ac2q1VQmtukmHzCpbo98m21qp");
 /// Los 6 decimales del precio NO tienen relación con los decimales de los tokens.
 pub const PRICE_DECIMALS: u32 = 6;
 
+#[cfg(test)]
+mod math_tests;
+
 #[program]
 pub mod solana_token_swap {
     use super::*;
@@ -258,6 +261,18 @@ pub mod solana_token_swap {
     }
 }
 
+/// `10^decimals` as `u128`, or `MathOverflow` if it does not fit.
+///
+/// 🇪🇸 NOTA: los decimales vienen del Mint y SPL Token acepta cualquier u8, así
+/// que los elige quien crea el mercado. 10^38 cabe en u128 y 10^39 ya no: con
+/// `pow` a secas, un mint de 39+ decimales hacía panic en cada swap (lo encontró
+/// el property test P1). `checked_pow` convierte ese panic en un error tipado.
+fn pow10(decimals: u8) -> Result<u128> {
+    10u128
+        .checked_pow(decimals as u32)
+        .ok_or(SwapError::MathOverflow.into())
+}
+
 /// Converts an input amount of token A into the corresponding amount of token B.
 ///
 /// 🇪🇸 NOTA: tres trabajos en una fórmula:
@@ -275,12 +290,12 @@ pub fn amount_a_to_b(amount_a: u64, price: u64, decimals_a: u8, decimals_b: u8) 
     let numerator = (amount_a as u128)
         .checked_mul(price as u128)
         .ok_or(SwapError::MathOverflow)?
-        .checked_mul(10u128.pow(decimals_b as u32))
+        .checked_mul(pow10(decimals_b)?)
         .ok_or(SwapError::MathOverflow)?;
 
     let denominator = 10u128
         .pow(PRICE_DECIMALS)
-        .checked_mul(10u128.pow(decimals_a as u32))
+        .checked_mul(pow10(decimals_a)?)
         .ok_or(SwapError::MathOverflow)?;
 
     // 🇪🇸 NOTA: la división entera trunca hacia abajo, y eso favorece al pool.
@@ -310,11 +325,11 @@ pub fn amount_b_to_a(amount_b: u64, price: u64, decimals_a: u8, decimals_b: u8) 
     let numerator = (amount_b as u128)
         .checked_mul(10u128.pow(PRICE_DECIMALS))
         .ok_or(SwapError::MathOverflow)?
-        .checked_mul(10u128.pow(decimals_a as u32))
+        .checked_mul(pow10(decimals_a)?)
         .ok_or(SwapError::MathOverflow)?;
 
     let denominator = (price as u128)
-        .checked_mul(10u128.pow(decimals_b as u32))
+        .checked_mul(pow10(decimals_b)?)
         .ok_or(SwapError::MathOverflow)?;
 
     // 🇪🇸 NOTA: la división entera trunca hacia abajo, igual que en A→B. Como
