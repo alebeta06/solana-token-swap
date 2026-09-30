@@ -1,0 +1,39 @@
+# Two jobs, one per scope. The 27 Anchor integration tests are left out on
+# purpose — they need the Solana toolchain and a local validator; see
+# "What CI runs, and what it leaves out" in the README.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # With no argument, rustup installs the version in rust-toolchain.toml.
+      # It runs before the cache so the cache key sees the right rustc.
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --check
+      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo test -p solana-token-swap --lib
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: yarn
+          cache-dependency-path: frontend/yarn.lock
+      - run: yarn install --frozen-lockfile
+      # Vitest strips types without checking them, so a type error passes
+      # `vitest run` green. This step is what makes it fail.
+      - run: yarn typecheck
+      - run: yarn test

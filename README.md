@@ -629,6 +629,21 @@ The "fresh clone" column was measured by cloning the repo into an empty director
 
 **The property tests cover what the integration tests cannot reach.** The integration suite checks concrete swaps with ordinary numbers; the property suite checks `amount_a_to_b` and `amount_b_to_a` for *any* input — that the output is the exact floor of the price, that a round trip never gains, that the functions are monotonic, and that they never panic. The last one found a real bug: a mint with 39+ decimals made every swap panic (fixed in `d02b719`). Another one found a limitation, written up under [Known limitations](#known-limitations).
 
+### What CI runs, and what it leaves out on purpose
+
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs on every push and pull request, in two jobs:
+
+| Job | Steps |
+|---|---|
+| `rust` | `cargo fmt --check` · `cargo clippy --all-targets -- -D warnings` · `cargo test -p solana-token-swap --lib` |
+| `frontend` | `yarn install --frozen-lockfile` · `yarn typecheck` · `yarn test` |
+
+**The 27 integration tests are not in CI, deliberately.** They need the Solana 4.2.2 toolchain, an `anchor build` and a running validator: minutes of setup per run, and one more moving part that can fail for reasons unrelated to the code. A CI that is slow or intermittent gets ignored, and an ignored CI is worth nothing. What CI covers is what a fresh clone can run — the two ✅ rows in the table above. The integration suite stays a local check, run before every deployment.
+
+**`yarn typecheck` runs before `yarn test` because Vitest does not check types.** It strips them and runs the JavaScript, so a type error passes `vitest run` green. This was checked on purpose: the same type error, with and without that step.
+
+**The Rust version is pinned** in [`rust-toolchain.toml`](rust-toolchain.toml), not `stable`, so that a new clippy release cannot turn CI red with no change to the code. The price is that new lints stay invisible until the version is bumped by hand, in a commit of its own.
+
 ### Three pairs of tools, and which half of the repo each checks
 
 **The repo has two scopes, and every quality tool in it covers exactly one of them.** That is deliberate, and it is the single easiest thing to get wrong here: ⚠️ **running one half and believing you ran both has produced false confidence twice.**
