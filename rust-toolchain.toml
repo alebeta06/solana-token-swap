@@ -1,0 +1,15 @@
+# Host Rust toolchain for cargo fmt, clippy and the property tests — read by
+# both local cargo and CI, so the version lives in one place.
+#
+# It does NOT pick the compiler for the on-chain program: `anchor build`
+# invokes the SBF toolchain explicitly (+1.95.0-sbpf-solana-vX), chosen by
+# `solana_version` in Anchor.toml, and an explicit +toolchain wins over this
+# file.
+#
+# Pinned, not `stable`, on purpose: every clippy release adds lints, and CI
+# runs `-D warnings`, so `stable` would turn CI red on the day a new Rust ships
+# with no change to the code. The cost is that new lints stay invisible until
+# this version is bumped by hand — a deliberate, reviewable commit.
+[toolchain]
+channel = "1.98.0"
+components = ["clippy", "rustfmt"]
