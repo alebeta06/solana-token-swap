@@ -763,17 +763,25 @@ herramientas de alrededor todavía no alcanzan, y se paga tarde y en otro sitio.
 ### Lo que sí quedó, y cómo se comprueba
 
 El binario desplegado **es byte a byte** el que produce este repo. Verificado el
-2026-09-20 con `solana-verify 0.5.1` (binario de release, sha256 contrastado):
+2026-09-30 con `solana-verify 0.5.1` (binario de release, sha256 contrastado), tras el
+upgrade del arreglo de `checked_pow` (el hash anterior, `c4d05cb1…`, era el binario de
+233 184 bytes con el `pow` que hacía panic):
 
 ```bash
 solana-verify get-program-hash -u devnet BJ7GHy1zRe1VKuKUZU2ac2q1VQmtukmHzCpbo98m21qp
 solana-verify get-executable-hash target/deploy/solana_token_swap.so
-# los dos: c4d05cb19d58b0688434a63b94ad0a1ab9af24e6ff58d3277f1cd9efed37cf98
+# los dos: dbed1b344fb94133aa2100822e246f17bff70b9b44660d29f723684ee1e222c5
 ```
 
-Fichero crudo idéntico también: 233 184 bytes, sha256 `1088ea31…`. Los hashes de
-`solana-verify` son sha256 **sin el relleno de ceros del final** — por eso no coinciden
-con un `sha256sum` a secas.
+Fichero crudo: el `.so` local mide 231 200 bytes, sha256 `23480caa…`, y es idéntico a
+los primeros 231 200 bytes del `solana program dump`. El dump mide 233 184 porque la
+cuenta conserva el espacio del primer despliegue, y los 1 984 bytes de más son todos
+ceros. Los hashes de `solana-verify` son sha256 **sin el relleno de ceros del final** —
+por eso no coinciden con un `sha256sum` a secas.
+
+⚠️ **Cualquier cambio que desplace líneas de `lib.rs` cambia el hash**, aunque sea un
+comentario: los `require!` de Anchor incrustan `line!()` en el binario. Medido en la
+misma sesión (quitar dos líneas cambió el hash; sustituirlas por dos en blanco, no).
 
 ⚠️ **Eso NO es un build reproducible** y no hay que venderlo como tal: demuestra que lo
 desplegado es lo que sale de *este* toolchain, no que cualquiera con Docker llegue al

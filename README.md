@@ -535,7 +535,7 @@ Install [`solana-verify`](https://github.com/solana-foundation/solana-verifiable
 
 ```bash
 solana-verify get-program-hash -u devnet BJ7GHy1zRe1VKuKUZU2ac2q1VQmtukmHzCpbo98m21qp
-# c4d05cb19d58b0688434a63b94ad0a1ab9af24e6ff58d3277f1cd9efed37cf98
+# dbed1b344fb94133aa2100822e246f17bff70b9b44660d29f723684ee1e222c5
 ```
 
 Then build from source with the toolchain documented under [Toolchain](#toolchain) and hash the artifact:
@@ -543,10 +543,10 @@ Then build from source with the toolchain documented under [Toolchain](#toolchai
 ```bash
 anchor build
 solana-verify get-executable-hash target/deploy/solana_token_swap.so
-# c4d05cb19d58b0688434a63b94ad0a1ab9af24e6ff58d3277f1cd9efed37cf98
+# dbed1b344fb94133aa2100822e246f17bff70b9b44660d29f723684ee1e222c5
 ```
 
-Both numbers are sha256 over the binary with its trailing zero padding stripped, which is the comparison `solana-verify` itself makes. Measured on 2026-09-20 the two matched, and so did the raw files: **233 184 bytes**, sha256 `1088ea312ab864122cfaa46a5afdd9215a1b80dafc24bce4ee27f7409dfee9a7`, on chain and on disk.
+Both numbers are sha256 over the binary with its trailing zero padding stripped, which is the comparison `solana-verify` itself makes. Measured on 2026-09-30, after the upgrade that fixed a panic on mints with 39+ decimals, the two matched. The raw bytes match too: the local `.so` is **231 200 bytes**, sha256 `23480caa5d2d4751190f6a6c24762fd65937027a03f5b53bdbed89cf4d885784`, and it is exactly the first 231 200 bytes of what `solana program dump` returns. The dump is 233 184 bytes because the program account keeps the space of the first, larger deployment, and the extra 1 984 bytes are all zeros — which is why a plain `sha256sum` of the two files differs and the padding-stripped hash is the one to compare.
 
 ⚠️ **What that proves and what it doesn't.** It shows the deployed program is what *this* toolchain produces from *this* source — the useful half. It is not a reproducible build: it still relies on you having the same toolchain, rather than on a container that pins it for everyone. Closing that gap is what the two walls below prevent.
 
@@ -572,7 +572,7 @@ Measured inside the closest one available, `solanafoundation/solana-verifiable-b
 
 The container column was read from the image itself; this project's column is what `avm platform-tools resolve` reports for this workspace.
 
-Different compilers produce different bytecode, so the container's hash cannot match `c4d05cb1…` — and `verify-from-repo` refuses to write its on-chain record when the hashes disagree. The only way around it would be to build in the old container and *redeploy that binary*, trading a working deployment for a record no explorer would display on devnet anyway.
+Different compilers produce different bytecode, so the container's hash cannot match `dbed1b34…` — and `verify-from-repo` refuses to write its on-chain record when the hashes disagree. The only way around it would be to build in the old container and *redeploy that binary*, trading a working deployment for a record no explorer would display on devnet anyway.
 
 ### 🇪🇸 NOTA — la solución de la Fase 0 es el bloqueo de la Fase 9
 
