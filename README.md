@@ -1,12 +1,12 @@
 # solana-token-swap
 
-![status: program complete](https://img.shields.io/badge/status-program%20complete-14F195) ![Rust: rustc (SBF) 1.95-dev](https://img.shields.io/badge/Rust-rustc%20%28SBF%29%201.95--dev-2b2b3d?logo=rust&logoColor=white) ![Anchor: 1.2.0](https://img.shields.io/badge/Anchor-1.2.0-9945FF) ![Solana: 4.2.2](https://img.shields.io/badge/Solana-4.2.2-9945FF?logo=solana&logoColor=white) ![TypeScript: strict](https://img.shields.io/badge/TypeScript-strict-14F195?logo=typescript&logoColor=white) ![Next.js: 15](https://img.shields.io/badge/Next.js-15-2b2b3d?logo=nextdotjs&logoColor=white) ![tests: 27 + 96 passing](https://img.shields.io/badge/tests-27%20%2B%2096%20passing-14F195) ![typecheck: clean](https://img.shields.io/badge/typecheck-clean-14F195) ![network: Solana Devnet](https://img.shields.io/badge/network-Solana%20Devnet-9945FF?logo=solana&logoColor=white) [![demo: live](https://img.shields.io/badge/demo-live-14F195?logo=vercel&logoColor=white)](https://solana-token-swap.vercel.app/) ![license: MIT](https://img.shields.io/badge/license-MIT-14F195)
+![status: program complete](https://img.shields.io/badge/status-program%20complete-14F195) ![Rust: rustc (SBF) 1.95-dev](https://img.shields.io/badge/Rust-rustc%20%28SBF%29%201.95--dev-2b2b3d?logo=rust&logoColor=white) ![Anchor: 1.2.0](https://img.shields.io/badge/Anchor-1.2.0-9945FF) ![Solana: 4.2.2](https://img.shields.io/badge/Solana-4.2.2-9945FF?logo=solana&logoColor=white) ![TypeScript: strict](https://img.shields.io/badge/TypeScript-strict-14F195?logo=typescript&logoColor=white) ![Next.js: 15](https://img.shields.io/badge/Next.js-15-2b2b3d?logo=nextdotjs&logoColor=white) ![tests: 27 + 10 + 96 passing](https://img.shields.io/badge/tests-27%20%2B%2010%20%2B%2096%20passing-14F195) ![typecheck: clean](https://img.shields.io/badge/typecheck-clean-14F195) ![network: Solana Devnet](https://img.shields.io/badge/network-Solana%20Devnet-9945FF?logo=solana&logoColor=white) [![demo: live](https://img.shields.io/badge/demo-live-14F195?logo=vercel&logoColor=white)](https://solana-token-swap.vercel.app/) ![license: MIT](https://img.shields.io/badge/license-MIT-14F195)
 
 A fixed-price SPL token swap on Solana, written in Rust with Anchor 1.2.0.
 
 My first Solana program, coming from Solidity and Cairo. Built as Module 15 of the CodeCrypto Master's in Blockchain Engineering & AI.
 
-> **Status:** phases 0–9 done, phase 10 (walkthrough video and submission) pending · 27 program tests + 96 frontend tests passing · `yarn typecheck:all` clean · **deployed on devnet and exercised with a real round trip** · **[live demo](https://solana-token-swap.vercel.app/)** with a working faucet · not audited, educational code.
+> **Status:** phases 0–9 done, phase 10 (walkthrough video and submission) pending · 27 integration + 10 property + 96 frontend tests passing · `yarn typecheck:all` clean · **deployed on devnet and exercised with a real round trip** · **[live demo](https://solana-token-swap.vercel.app/)** with a working faucet · not audited, educational code.
 
 **Live demo → [solana-token-swap.vercel.app](https://solana-token-swap.vercel.app/)**
 
@@ -617,6 +617,18 @@ The asset to protect is **not the token supply** — these tokens are worthless 
 
 ## Tests
 
+### Three test suites, and what each one needs
+
+| Suite | Command | Tests | Needs | Fresh clone? |
+|---|---|---|---|---|
+| **Integration** — the five instructions against a real validator | `anchor test --skip-local-validator` | **27** · Mocha | Solana 4.2.2 + Anchor 1.2.0 toolchain, `anchor build`, and a running `solana-test-validator` | ❌ not without the Solana toolchain |
+| **Property** — the swap arithmetic, as pure functions | `cargo test -p solana-token-swap --lib` | **10** · proptest, 50 000 cases each | A Rust toolchain. No validator, no network, no `anchor build` | ✅ |
+| **Frontend** — the pure modules under `frontend/src/lib` | `yarn --cwd frontend test` | **96** · Vitest | `yarn --cwd frontend install`. No chain: the IDL copies are committed | ✅ |
+
+The "fresh clone" column was measured by cloning the repo into an empty directory and running each command with nothing else set up.
+
+**The property tests cover what the integration tests cannot reach.** The integration suite checks concrete swaps with ordinary numbers; the property suite checks `amount_a_to_b` and `amount_b_to_a` for *any* input — that the output is the exact floor of the price, that a round trip never gains, that the functions are monotonic, and that they never panic. The last one found a real bug: a mint with 39+ decimals made every swap panic (fixed in `d02b719`). Another one found a limitation, written up under [Known limitations](#known-limitations).
+
 ### Three pairs of tools, and which half of the repo each checks
 
 **The repo has two scopes, and every quality tool in it covers exactly one of them.** That is deliberate, and it is the single easiest thing to get wrong here: ⚠️ **running one half and believing you ran both has produced false confidence twice.**
@@ -624,7 +636,7 @@ The asset to protect is **not the token supply** — these tokens are worthless 
 | Concern | Root scope — `programs/`, `tests/`, `scripts/` | Frontend scope — `frontend/**` | One command for both? |
 |---|---|---|---|
 | **Type-check** | `yarn typecheck` · `tsconfig.json`, strict | `yarn typecheck:frontend` · `frontend/tsconfig.json`, strict | ✅ `yarn typecheck:all` |
-| **Tests** | `anchor test --skip-local-validator` · Mocha, **27** tests, needs a validator | `yarn --cwd frontend test` · Vitest, **96** tests | ❌ **no combined command — run both** |
+| **Tests** | `anchor test --skip-local-validator` · Mocha, **27** tests, needs a validator — plus `cargo test -p solana-token-swap --lib` · **10** property tests, pure Rust | `yarn --cwd frontend test` · Vitest, **96** tests | ❌ **no combined command — run both** |
 | **Formatting** | `yarn lint` · Prettier, `yarn lint:fix` to apply | *none, deliberately* | — |
 
 ```bash
@@ -735,6 +747,12 @@ anchor test --skip-local-validator
 ```
 
 Without `rm -rf test-ledger` the previous run's markets survive and the tests fail with `account already in use`. All 27 tests should pass.
+
+The property tests need none of that — no validator and no `anchor build`, only Rust:
+
+```bash
+cargo test -p solana-token-swap --lib   # 10 property tests, ~8 s once compiled
+```
 
 ### The frontend
 

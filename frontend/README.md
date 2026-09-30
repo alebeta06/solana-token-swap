@@ -84,7 +84,7 @@ src/
     errors.ts    código de error de Anchor → una frase útil     (errors.test.ts)
 ```
 
-`yarn test` (vitest, 90 tests) cubre los módulos sin red. No tocan la red: la
+`yarn test` (vitest, 96 tests) cubre los módulos sin red. No tocan la red: la
 política del faucet se decide en `faucet.ts` justo para poder probarla sin cadena.
 
 ### 🔴 El mapeo A/B
@@ -540,7 +540,7 @@ endpoints RPC" arriba.
 
 | Comprobación                                        | Estado |
 | --------------------------------------------------- | ------ |
-| `yarn test` — 90 tests                                | ✅ |
+| `yarn test` — 96 tests                                | ✅ |
 | `yarn typecheck`                                     | ✅ |
 | `yarn build`                                         | ✅ |
 | Comprobación de manifest obsoleto rompe el build     | ✅ (provocada a propósito) |

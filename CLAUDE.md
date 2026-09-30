@@ -91,11 +91,12 @@ tests fallan con "account already in use".
 
 ### ⚠️ El repo tiene DOS alcances: correr uno no es correr todo
 
-Hay **dos `tsconfig.json`** y **dos runners de test**, con alcances disjuntos:
+Hay **dos `tsconfig.json`** y **tres suites de test**, con alcances disjuntos:
 
 | Alcance      | tsconfig                | Runner | Qué cubre                             |
 | ------------ | ----------------------- | ------ | ------------------------------------- |
 | Raíz         | `tsconfig.json`         | Mocha (`ts-mocha`) | `scripts/`, `tests/`, `target/types/` |
+| Programa     | —                       | `cargo test` (proptest) | la aritmética del swap, `programs/…/src/math_tests.rs` |
 | Frontend     | `frontend/tsconfig.json`| Vitest | `frontend/**`                         |
 
 **Quien corre uno y cree que ha corrido todo, se equivoca. Ya ha causado dos falsos
@@ -109,12 +110,20 @@ El comando que cubre los dos a la vez:
 yarn typecheck:all      # = yarn typecheck && yarn typecheck:frontend
 ```
 
-⚠️ **Para los tests no existe equivalente**: hay que correr los dos a mano.
+⚠️ **Para los tests no existe equivalente**: hay que correr los tres a mano.
 
 ```bash
-anchor test --skip-local-validator   # 27 tests del programa (necesita el validador)
-yarn --cwd frontend test             # 31 tests de vitest
+anchor test --skip-local-validator   # 27 de integración — necesita toolchain de Solana + validador
+cargo test -p solana-token-swap --lib # 10 de propiedades — solo Rust, sin validador ni red
+yarn --cwd frontend test             # 96 de vitest — solo yarn install, sin cadena
 ```
+
+Un clon recién hecho, sin toolchain de Solana ni `anchor build`, ejecuta los dos
+últimos (medido el 2026-09-30). El primero no.
+
+🔴 **Los números de tests se MIDEN antes de citarlos, nunca se copian de la
+documentación.** Este fichero dijo "31 de vitest" cuando eran 96, y la cifra se propagó
+porque alguien la copió sin medir. Aplica también a lo que se cite de aquí.
 
 **Los dos alcances van en `strict`.** El de la raíz no lo estaba —`tests/` y
 `scripts/` se comprobaban sin `noImplicitAny`— y se activó en la Fase 9 al preparar los
@@ -460,14 +469,16 @@ En el denominador de A→B hay dos factores que **por casualidad pueden valer lo
 
 ## Estado del programa
 
-**Fases 0–9 completadas** ✅ — programa con **27 tests en verde**, desplegado en
+**Fases 0–9 completadas** ✅ — programa con **27 tests de integración y 10 de
+propiedades en verde**, desplegado en
 devnet, **frontend funcionando con el swap verificado on-chain**, faucet en producción
 y documentación cerrada.
 
 ### El frontend (Fase 7)
 
-Next.js 15 en `frontend/`, con **31 tests de vitest** sobre los tres módulos puros
-(`units`, `market`, `quote`) y `typecheck` + `build` en verde.
+Next.js 15 en `frontend/`, con **96 tests de vitest** (medidos el 2026-09-30) sobre los
+módulos puros de `frontend/src/lib` —en la Fase 7 eran 31 sobre `units`, `market` y
+`quote`— y `typecheck` + `build` en verde.
 
 **Swap real desde el navegador, con Solflare contra devnet:** 1 DEMO9 → 2 DEMO6.
 Firma
