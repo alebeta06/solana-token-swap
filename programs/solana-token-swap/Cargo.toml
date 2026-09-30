@@ -15,6 +15,11 @@ no-entrypoint = []
 no-idl = []
 no-log-ix-name = []
 idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build"]
+# Declared empty so check-cfg knows them: Anchor's macros emit
+# #[cfg(feature = "...")] for these three inside this crate.
+anchor-debug = []
+custom-heap = []
+custom-panic = []
 
 [dependencies]
 anchor-lang = "1.2.0"
@@ -23,3 +28,8 @@ anchor-spl = "1.2.0"
 [dev-dependencies]
 proptest = "1.11.0"
 ruint = "1.20.1"
+
+# `target_os = "solana"` is the SBF target, not a feature, so it is
+# declared to check-cfg instead.
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(target_os, values("solana"))'] }
