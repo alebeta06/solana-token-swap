@@ -815,6 +815,10 @@ When its SOL falls below 0.05 the endpoint refuses with 503 rather than start fa
 
 `verification.status: "unverified"`, read from the explorer. A **verified build** was investigated in phase 9 and **ruled out as impossible for this deployment**: remote verification only covers mainnet, and the Solana version this project pins has no Docker image to build reproducibly in. Both walls are measured and written out under [Verifying the deployed binary](#verifying-the-deployed-binary), along with the hash anyone can check by hand — which recovers the useful half of what a verified build would have given.
 
+### B→A can refuse a swap whose result would fit, on mints with 20+ decimals
+
+In `amount_b_to_a` the price sits in the denominator, `price × 10^dec_b`, and with `dec_b ≥ 20` and a very high price that intermediate overflows `u128`: the swap fails with `MathOverflow` even though the true output fits. **It is a conservative refusal — nothing leaves the pool — and it cannot happen below 20 decimals**, which no real token uses; avoiding it would mean reworking the arithmetic for mints that do not exist. A property test found it with 50 000 cases after passing with proptest's default 256.
+
 ### Fixed price, and everything that follows from it
 
 No oracle, no reserves curve, no fees, no LP tokens. The price is whatever the market authority last stored, so **the market authority can reprice the pool at will** — `min_amount_out` protects an individual swap from that, but nothing protects a liquidity provider, who has no claim to withdraw in the first place. `add_liquidity` is a one-way gift. That is the assignment, not an oversight, and it is why this is educational code and not a protocol.

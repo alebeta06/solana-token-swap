@@ -321,6 +321,17 @@ pub fn amount_a_to_b(amount_a: u64, price: u64, decimals_a: u8, decimals_b: u8) 
 ///
 /// ⚠️ `price` aparece en el DENOMINADOR. El caller debe garantizar que no es
 /// cero antes de llamar; el `checked_div` es la red de seguridad, no la defensa.
+///
+/// ⚠️ Known limitation, deliberate: with `decimals_b >= 20` and a very high
+/// `price`, the denominator `price × 10^dec_b` can overflow `u128` and the
+/// function returns `MathOverflow` even though the true result would fit in a
+/// `u64`. Below 20 decimals it cannot happen (`u64::MAX × 10^19 < u128::MAX`).
+///
+/// 🇪🇸 NOTA: es un rechazo CONSERVADOR, no una incoherencia como lo era el `pow`
+/// que hacía panic: el error es el tipado que corresponde y del pool no sale
+/// nada. Evitarlo exigiría reformular la aritmética para mints de 20+
+/// decimales, que ningún token real usa. Lo encontró el property test
+/// `b_to_a_falls_with_price` con 50 000 casos; con 256 pasaba.
 pub fn amount_b_to_a(amount_b: u64, price: u64, decimals_a: u8, decimals_b: u8) -> Result<u64> {
     let numerator = (amount_b as u128)
         .checked_mul(10u128.pow(PRICE_DECIMALS))
