@@ -1,6 +1,6 @@
 # solana-token-swap
 
-![status: program complete](https://img.shields.io/badge/status-program%20complete-14F195) ![Rust: rustc (SBF) 1.95-dev](https://img.shields.io/badge/Rust-rustc%20%28SBF%29%201.95--dev-2b2b3d?logo=rust&logoColor=white) ![Anchor: 1.2.0](https://img.shields.io/badge/Anchor-1.2.0-9945FF) ![Solana: 4.2.2](https://img.shields.io/badge/Solana-4.2.2-9945FF?logo=solana&logoColor=white) ![TypeScript: strict](https://img.shields.io/badge/TypeScript-strict-14F195?logo=typescript&logoColor=white) ![Next.js: 15](https://img.shields.io/badge/Next.js-15-2b2b3d?logo=nextdotjs&logoColor=white) ![tests: 27 + 10 + 96 passing](https://img.shields.io/badge/tests-27%20%2B%2010%20%2B%2096%20passing-14F195) ![typecheck: clean](https://img.shields.io/badge/typecheck-clean-14F195) ![network: Solana Devnet](https://img.shields.io/badge/network-Solana%20Devnet-9945FF?logo=solana&logoColor=white) [![demo: live](https://img.shields.io/badge/demo-live-14F195?logo=vercel&logoColor=white)](https://solana-token-swap.vercel.app/) ![license: MIT](https://img.shields.io/badge/license-MIT-14F195)
+[![CI](https://github.com/alebeta06/solana-token-swap/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/alebeta06/solana-token-swap/actions/workflows/ci.yml) ![status: program complete](https://img.shields.io/badge/status-program%20complete-14F195) ![Rust: rustc (SBF) 1.95-dev](https://img.shields.io/badge/Rust-rustc%20%28SBF%29%201.95--dev-2b2b3d?logo=rust&logoColor=white) ![Anchor: 1.2.0](https://img.shields.io/badge/Anchor-1.2.0-9945FF) ![Solana: 4.2.2](https://img.shields.io/badge/Solana-4.2.2-9945FF?logo=solana&logoColor=white) ![TypeScript: strict](https://img.shields.io/badge/TypeScript-strict-14F195?logo=typescript&logoColor=white) ![Next.js: 15](https://img.shields.io/badge/Next.js-15-2b2b3d?logo=nextdotjs&logoColor=white) ![tests: 27 + 10 + 96 passing](https://img.shields.io/badge/tests-27%20%2B%2010%20%2B%2096%20passing-14F195) ![typecheck: clean](https://img.shields.io/badge/typecheck-clean-14F195) ![network: Solana Devnet](https://img.shields.io/badge/network-Solana%20Devnet-9945FF?logo=solana&logoColor=white) [![demo: live](https://img.shields.io/badge/demo-live-14F195?logo=vercel&logoColor=white)](https://solana-token-swap.vercel.app/) ![license: MIT](https://img.shields.io/badge/license-MIT-14F195)
 
 A fixed-price SPL token swap on Solana, written in Rust with Anchor 1.2.0.
 
@@ -640,7 +640,17 @@ The "fresh clone" column was measured by cloning the repo into an empty director
 
 **The 27 integration tests are not in CI, deliberately.** They need the Solana 4.2.2 toolchain, an `anchor build` and a running validator: minutes of setup per run, and one more moving part that can fail for reasons unrelated to the code. A CI that is slow or intermittent gets ignored, and an ignored CI is worth nothing. What CI covers is what a fresh clone can run — the two ✅ rows in the table above. The integration suite stays a local check, run before every deployment.
 
-**`yarn typecheck` runs before `yarn test` because Vitest does not check types.** It strips them and runs the JavaScript, so a type error passes `vitest run` green. This was checked on purpose: the same type error, with and without that step.
+**`yarn typecheck` runs before `yarn test` because Vitest does not check types.** It strips them and runs the JavaScript, so a type error passes `vitest run` green. That was tested on CI, not assumed, with this type error added to `frontend/src/lib/units.ts` — it has no runtime effect, so only a type checker can see it:
+
+```ts
+const sabotage: number = "not a number";
+void sabotage;
+```
+
+- **Without the `yarn typecheck` step**, the `frontend` job finished **green** — `yarn test` passed — on a commit that contains that error — [run 36689579874](https://github.com/alebeta06/solana-token-swap/actions/runs/36689579874), commit `7404f3d`.
+- **With the step**, the same error turned the job **red** at `yarn typecheck`, with `Type 'string' is not assignable to type 'number'`, and `yarn test` never ran — [run 36689578954](https://github.com/alebeta06/solana-token-swap/actions/runs/36689578954), commit `c694cdb`. That run also crossed `decimals_a` and `decimals_b` in `amount_b_to_a`, and the `rust` job went red at `cargo test`, after `fmt` and `clippy` had passed.
+
+Both runs come from throwaway branches that were deleted afterwards. The run pages keep each job's result and step list, but GitHub expires their logs (90 days by default), and the two commits are no longer on any branch, so they may eventually disappear too. **That is why the error is written out above:** this paragraph does not depend on anything that expires.
 
 **The Rust version is pinned** in [`rust-toolchain.toml`](rust-toolchain.toml), not `stable`, so that a new clippy release cannot turn CI red with no change to the code. The price is that new lints stay invisible until the version is bumped by hand, in a commit of its own.
 
