@@ -4,9 +4,20 @@ const LINKS = [
   { label: "LinkedIn", href: "https://www.linkedin.com/in/alebeta/", testId: "link-linkedin" },
 ];
 
+const DEMO_VIDEO_URL = "https://www.youtube.com/watch?v=nUb5637SPXo";
+
 export function Footer() {
   return (
-    <footer className="mt-12 flex justify-center border-t border-line pt-6 text-sm text-muted">
+    <footer className="mt-12 flex flex-col items-center gap-4 border-t border-line pt-6 text-sm text-muted">
+      <a
+        href={DEMO_VIDEO_URL}
+        target="_blank"
+        rel="noreferrer"
+        data-testid="link-demo-video"
+        className="rounded-full border border-line bg-surface-2 px-3 py-1 text-sm text-muted transition-colors hover:border-sol-purple hover:text-text"
+      >
+        ▶ Watch the demo on YouTube
+      </a>
       <nav className="flex flex-wrap justify-center gap-6">
         {LINKS.map((link) => (
           <a
