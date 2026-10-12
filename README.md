@@ -1,14 +1,19 @@
 # solana-token-swap
 
-[![CI](https://github.com/alebeta06/solana-token-swap/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/alebeta06/solana-token-swap/actions/workflows/ci.yml) ![status: program complete](https://img.shields.io/badge/status-program%20complete-14F195) ![Rust: rustc (SBF) 1.95-dev](https://img.shields.io/badge/Rust-rustc%20%28SBF%29%201.95--dev-2b2b3d?logo=rust&logoColor=white) ![Anchor: 1.2.0](https://img.shields.io/badge/Anchor-1.2.0-9945FF) ![Solana: 4.2.2](https://img.shields.io/badge/Solana-4.2.2-9945FF?logo=solana&logoColor=white) ![TypeScript: strict](https://img.shields.io/badge/TypeScript-strict-14F195?logo=typescript&logoColor=white) ![Next.js: 15](https://img.shields.io/badge/Next.js-15-2b2b3d?logo=nextdotjs&logoColor=white) ![tests: 27 + 10 + 96 passing](https://img.shields.io/badge/tests-27%20%2B%2010%20%2B%2096%20passing-14F195) ![typecheck: clean](https://img.shields.io/badge/typecheck-clean-14F195) ![network: Solana Devnet](https://img.shields.io/badge/network-Solana%20Devnet-9945FF?logo=solana&logoColor=white) [![demo: live](https://img.shields.io/badge/demo-live-14F195?logo=vercel&logoColor=white)](https://solana-token-swap.vercel.app/) ![license: MIT](https://img.shields.io/badge/license-MIT-14F195)
+[![CI](https://github.com/alebeta06/solana-token-swap/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/alebeta06/solana-token-swap/actions/workflows/ci.yml) ![status: program complete](https://img.shields.io/badge/status-program%20complete-14F195) ![Rust: rustc (SBF) 1.95-dev](https://img.shields.io/badge/Rust-rustc%20%28SBF%29%201.95--dev-2b2b3d?logo=rust&logoColor=white) ![Anchor: 1.2.0](https://img.shields.io/badge/Anchor-1.2.0-9945FF) ![Solana: 4.2.2](https://img.shields.io/badge/Solana-4.2.2-9945FF?logo=solana&logoColor=white) ![TypeScript: strict](https://img.shields.io/badge/TypeScript-strict-14F195?logo=typescript&logoColor=white) ![Next.js: 15](https://img.shields.io/badge/Next.js-15-2b2b3d?logo=nextdotjs&logoColor=white) ![tests: 27 + 10 + 96 passing](https://img.shields.io/badge/tests-27%20%2B%2010%20%2B%2096%20passing-14F195) ![typecheck: clean](https://img.shields.io/badge/typecheck-clean-14F195) ![network: Solana Devnet](https://img.shields.io/badge/network-Solana%20Devnet-9945FF?logo=solana&logoColor=white) [![demo: live](https://img.shields.io/badge/demo-live-14F195?logo=vercel&logoColor=white)](https://solana-token-swap.vercel.app/) [![demo: video](https://img.shields.io/badge/demo-video-FF0000?logo=youtube&logoColor=white)](https://www.youtube.com/watch?v=nUb5637SPXo) ![license: MIT](https://img.shields.io/badge/license-MIT-14F195)
 
 A fixed-price SPL token swap on Solana, written in Rust with Anchor 1.2.0.
 
 My first Solana program, coming from Solidity and Cairo. Built as Module 15 of the CodeCrypto Master's in Blockchain Engineering & AI.
 
-> **Status:** phases 0–9 done, phase 10 (walkthrough video and submission) pending · 27 integration + 10 property + 96 frontend tests passing · `yarn typecheck:all` clean · **deployed on devnet and exercised with a real round trip** · **[live demo](https://solana-token-swap.vercel.app/)** with a working faucet · not audited, educational code.
+> **Status:** phases 0–9 done, phase 10 in progress — walkthrough video published, GitLab submission pending · 27 integration + 10 property + 96 frontend tests passing · `yarn typecheck:all` clean · **deployed on devnet and exercised with a real round trip** · **[live demo](https://solana-token-swap.vercel.app/)** with a working faucet · not audited, educational code.
 
 **Live demo → [solana-token-swap.vercel.app](https://solana-token-swap.vercel.app/)**
+
+<a href="https://www.youtube.com/watch?v=nUb5637SPXo">
+  <img src="https://img.youtube.com/vi/nUb5637SPXo/hqdefault.jpg"
+       alt="Watch the walkthrough video on YouTube" width="480">
+</a>
 
 ---
 
