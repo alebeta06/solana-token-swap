@@ -10,10 +10,9 @@ My first Solana program, coming from Solidity and Cairo. Built as Module 15 of t
 
 **Live demo → [solana-token-swap.vercel.app](https://solana-token-swap.vercel.app/)**
 
-<a href="https://www.youtube.com/watch?v=nUb5637SPXo">
-  <img src="https://img.youtube.com/vi/nUb5637SPXo/hqdefault.jpg"
-       alt="Watch the walkthrough video on YouTube" width="480">
-</a>
+<p align="center"><a href="https://www.youtube.com/watch?v=nUb5637SPXo"><img src="https://img.youtube.com/vi/nUb5637SPXo/maxresdefault.jpg" alt="Watch the walkthrough video on YouTube" width="640"></a></p>
+
+<p align="center"><a href="https://www.youtube.com/watch?v=nUb5637SPXo"><img src="https://img.shields.io/badge/▶%20WATCH%20ON%20YOUTUBE-FF0000?style=for-the-badge&logo=youtube&logoColor=white" alt="Watch on YouTube"></a></p>
 
 ---
 
