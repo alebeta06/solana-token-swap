@@ -4,10 +4,11 @@ Proyecto del Máster CodeCrypto (Blockchain Engineering & AI), Módulo 15 — To
 Swap de tokens SPL con precio fijo, en Anchor. **Primera experiencia del autor con
 Solana y Rust** — explicar antes de implementar, comparando siempre con Solidity/EVM.
 
-> ⚠️ **Estado actual: Fases 0–9 completadas — el faucet funciona en producción y la
-> documentación está cerrada. El verified build quedó INVESTIGADO Y DESCARTADO, con el
-> motivo medido (ver "El verified build de la Fase 9"). Queda solo la Fase 10: video y
-> entrega.**
+> ⚠️ **Estado actual: las 11 fases (0–10) completadas — proyecto ENTREGADO.** Vídeo
+> publicado en YouTube (`nUb5637SPXo`) y entrega hecha en GitLab (merge `bcad811`).
+> El verified build quedó INVESTIGADO Y DESCARTADO, con el motivo medido (ver "El
+> verified build de la Fase 9"). **No queda trabajo de fases pendiente**: lo que venga
+> después es mantenimiento y se decide caso a caso.
 > Son 11 fases (0 a 10). Ver "Plan completo — las 11 fases" y "Estado del programa".
 
 ---
@@ -469,7 +470,7 @@ En el denominador de A→B hay dos factores que **por casualidad pueden valer lo
 
 ## Estado del programa
 
-**Fases 0–9 completadas** ✅ — programa con **27 tests de integración y 10 de
+**Fases 0–10 completadas** ✅ — programa con **27 tests de integración y 10 de
 propiedades en verde**, desplegado en
 devnet, **frontend funcionando con el swap verificado on-chain**, faucet en producción
 y documentación cerrada.
@@ -728,7 +729,7 @@ cualquier visitante consiga tokens sin pedírselos al desplegador.
 | 7    | Frontend Next.js                                 | ✅     |
 | 8    | Faucet + metadata de Metaplex (DEMO6/DEMO9)      | ✅     |
 | 9    | Vercel + README + diagramas + **verified build** | ✅ (el verified build, descartado con motivo) |
-| 10   | Video + entrega GitHub/GitLab                    | ⬜     |
+| 10   | Video + entrega GitHub/GitLab                    | ✅     |
 
 ### El verified build de la Fase 9
 
