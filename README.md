@@ -562,29 +562,42 @@ The verification badge an explorer shows comes from a remote build run by the [O
 
 This program lives on devnet, so `verification.status` stays `"unverified"` no matter what else is done. That limit alone closes the question; the second one is what stops even the local half.
 
-### Wall 2 — there is no Docker image for Solana 4.2.2
+### Wall 2 — the official 4.2.2 image builds with an older compiler
 
-A reproducible build compiles inside a pinned container, `solanafoundation/solana-verifiable-build:<solana version>`. That repository publishes 608 tags and **the series 4 stops at `4.1.2`**. The version this project pins has no image.
+A reproducible build compiles inside a pinned container, `solanafoundation/solana-verifiable-build:<solana version>`.
 
-Measured inside the closest one available, `solanafoundation/solana-verifiable-build:4.1.2`:
+**How this section changed.** It was first written on **2026-09-20** with `solana-verify` 0.5.1, when no image for Solana 4.2.2 existed. The official `4.2.2` image was published **one day later, on 2026-09-21**, together with `solana-verify` **0.5.2**. Re-measured on **2026-10-16** with that release:
 
-| | Container (4.1.2) | This project's deployed binary |
+```bash
+# root Cargo.toml declares the version, so solana-verify picks the matching image:
+#   [workspace.metadata.cli]
+#   solana = "4.2.2"
+solana-verify build --arch v3
+# Found docker image for Solana version 4.2.2
+# digest sha256:16053d845922e798ab1852d3fe222faf5a23eeb1db3a13d30b70d6b6e82184ae
+solana-verify get-executable-hash target/deploy/solana_token_swap.so
+# ca3eb13c660dc99c53850d890c9f5c2ea49a947343a3baecc88ae36e28ee031b
+```
+
+**It does not match** the deployed `dbed1b34…`. Both binaries are SBPFv3 (`e_flags` 0x3), but the container's is 235 544 bytes against 231 200. The reason is inside the image: the tag says 4.2.2, but the build tool it ships is from 4.2.0:
+
+| | Container (`4.2.2` tag) | This project's deployed binary |
 |---|---|---|
-| Solana toolchain | `cargo-build-sbf` 4.1.0 | 4.2.2, pinned in `Anchor.toml` |
-| platform-tools | **v1.54** | **v1.57** |
+| Solana toolchain | `cargo-build-sbf` **4.2.0** | 4.2.2, pinned in `Anchor.toml` |
+| platform-tools | **v1.56** | **v1.57** |
 | rustc compiling to SBF | **1.89.0** | **1.95.0** |
 
-The container column was read from the image itself; this project's column is what `avm platform-tools resolve` reports for this workspace.
+The container column is the output of `cargo-build-sbf --version` and of the platform-tools `rustc --version`, run with `docker run` inside that exact digest. This project's column is what `avm platform-tools resolve` reports for this workspace.
 
-Different compilers produce different bytecode, so the container's hash cannot match `dbed1b34…` — and `verify-from-repo` refuses to write its on-chain record when the hashes disagree. The only way around it would be to build in the old container and *redeploy that binary*, trading a working deployment for a record no explorer would display on devnet anyway.
+Different compilers produce different bytecode, so the container's hash cannot match `dbed1b34…`. Closing the gap would mean deploying the container's binary in place of the current one, and on devnet Wall 1 still leaves the program `unverified`.
 
 ### 🇪🇸 NOTA — la solución de la Fase 0 es el bloqueo de la Fase 9
 
 Fijar `solana_version = "4.2.2"` fue **lo único que resolvió la guerra de toolchain** con la que arrancó este proyecto: sin esa línea, Anchor elige un default cuyo rustc es anterior a edition 2024 y no compila las dependencias; con la 3.1.14 que recomendaba la documentación, compila pero el validador no carga el binario SBPFv3.
 
-Nueve fases después, **esa misma versión es la que hace imposible el build reproducible**, porque el ecosistema de imágenes todavía no ha llegado a ella. La solución de la Fase 0 es el bloqueo de la Fase 9.
+Nueve fases después, **esa misma versión es la que impide el build reproducible**. El 20/09 no había imagen para ella. La imagen oficial `4.2.2` salió al día siguiente, el 21/09, pero trae el `cargo-build-sbf` de la 4.2.0 y unas platform-tools más viejas (v1.56, rustc 1.89) que las que Anchor resuelve para esta versión (v1.57, rustc 1.95). Con otro compilador, el hash no cuadra. La solución de la Fase 0 sigue siendo el bloqueo de la Fase 9; solo ha cambiado el motivo.
 
-No es un fallo de nadie: es lo que pasa al fijar una versión que las herramientas de alrededor aún no alcanzan. Ir por delante tiene un precio, y se paga tarde y en otro sitio — aquí, en la única parte del proyecto que depende de que un tercero haya publicado una imagen. La alternativa tampoco era gratis: quedarse en una versión con imagen significaba no compilar.
+No es un fallo de nadie: es lo que pasa al fijar una versión que las herramientas de alrededor aún no alcanzan del todo. Ir por delante tiene un precio, y se paga tarde y en otro sitio: aquí, en la única parte del proyecto que depende de que un tercero haya publicado una imagen con el mismo compilador. Y la lección del cambio de fecha: **"no existe" es una afirmación con fecha de caducidad**, así que va siempre con la fecha en que se midió.
 
 ---
 
@@ -862,7 +875,7 @@ When its SOL falls below 0.05 the endpoint refuses with 503 rather than start fa
 
 ### The program is `unverified` on chain, and will stay that way
 
-`verification.status: "unverified"`, read from the explorer. A **verified build** was investigated in phase 9 and **ruled out as impossible for this deployment**: remote verification only covers mainnet, and the Solana version this project pins has no Docker image to build reproducibly in. Both walls are measured and written out under [Verifying the deployed binary](#verifying-the-deployed-binary), along with the hash anyone can check by hand — which recovers the useful half of what a verified build would have given.
+`verification.status: "unverified"`, read from the explorer. A **verified build** was investigated in phase 9 and **ruled out as impossible for this deployment**: remote verification only covers mainnet, and the official Docker image for the Solana version this project pins (published 2026-09-21, a day after the investigation) builds with older platform-tools than Anchor uses, so its hash does not match the deployed binary (re-measured 2026-10-16). Both walls are measured and written out under [Verifying the deployed binary](#verifying-the-deployed-binary), along with the hash anyone can check by hand — which recovers the useful half of what a verified build would have given.
 
 ### B→A can refuse a swap whose result would fit, on mints with 20+ decimals
 

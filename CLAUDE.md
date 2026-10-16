@@ -733,8 +733,8 @@ cualquier visitante consiga tokens sin pedírselos al desplegador.
 
 ### El verified build de la Fase 9
 
-⛔ **INVESTIGADO Y DESCARTADO el 2026-09-20. No volver a intentarlo sin que cambie algo
-del ecosistema.** Un verified build permite a cualquiera reproducir el binario desde el
+⛔ **INVESTIGADO Y DESCARTADO el 2026-09-20; RE-MEDIDO el 2026-10-16 con el mismo
+resultado.** Un verified build permite a cualquiera reproducir el binario desde el
 código y comprobar que coincide con el desplegado. Aquí es **imposible**, por dos muros
 medidos — ninguno de ellos del proyecto. El desarrollo completo está en el README de la
 raíz, sección "Verifying the deployed binary".
@@ -745,32 +745,51 @@ verification will only work on mainnet."* Este programa está en devnet, así qu
 `verification.status` se queda en `unverified` haga lo que haga el resto. **Este muro solo
 lo tira redesplegar en mainnet**, que no es lo que pide el módulo.
 
-**Muro 2 — no existe imagen Docker para Solana 4.2.2.** El repositorio
-`solanafoundation/solana-verifiable-build` publica 608 tags y la serie 4 **se para en
-4.1.2**. Medido dentro de la 4.1.2, que es la más cercana disponible:
+**Muro 2 — la imagen oficial 4.2.2 compila con un compilador más viejo.** Historia con
+fechas, porque el muro cambió de motivo:
 
-| | Contenedor 4.1.2 | Binario desplegado |
+- **2026-09-20**, con `solana-verify` 0.5.1: no existía imagen para la 4.2.2 (la serie 4
+  llegaba hasta la 4.1.2). Es lo que decía la primera versión de esta sección.
+- **2026-09-21**: se publican la imagen oficial `4.2.2` (digest `sha256:16053d84…`) y
+  `solana-verify` **0.5.2**.
+- **2026-10-16**: re-medido. `solana-verify` actualizado a 0.5.2 con
+  `cargo install --locked --force`. Hizo falta `--force` porque la 0.5.1 era el binario de
+  release y no una instalación de cargo. Se añadió `[workspace.metadata.cli] solana =
+  "4.2.2"` al `Cargo.toml` raíz y se lanzó `solana-verify build --arch v3`. Hash:
+  **`ca3eb13c…`**, 235 544 bytes, SBPFv3. **No coincide** con el desplegado
+  `dbed1b34…`.
+
+El motivo está dentro de la imagen, leído con `docker run` sobre ese digest:
+
+| | Contenedor (tag `4.2.2`) | Binario desplegado |
 | --- | --- | --- |
-| Toolchain de Solana | `cargo-build-sbf` 4.1.0 | 4.2.2, fijada en `Anchor.toml` |
-| platform-tools | **v1.54** | **v1.57** |
+| Toolchain de Solana | `cargo-build-sbf` **4.2.0** | 4.2.2, fijada en `Anchor.toml` |
+| platform-tools | **v1.56** | **v1.57** |
 | rustc que compila a SBF | **1.89.0** | **1.95.0** |
 
-La columna del contenedor sale de leer la imagen; la nuestra, de `avm platform-tools
-resolve` sobre este workspace. ⚠️ El `cargo-build-sbf` del PATH del sistema **no** es el
-que usa Anchor (reporta 4.1.0 / v1.54): el bueno lo resuelve Anchor desde `solana_version`.
+Nuestra columna sale de `avm platform-tools resolve` sobre este workspace. ⚠️ El
+`cargo-build-sbf` del PATH del sistema **no** es el que usa Anchor: el bueno lo resuelve
+Anchor desde `solana_version`.
 
-Compiladores distintos ⇒ bytecode distinto ⇒ el hash no cuadra, y `verify-from-repo`
-**se niega a escribir la PDA** cuando no coinciden. Así que ni siquiera queda el valor
-parcial de dejar el origen registrado on-chain, salvo reconstruyendo con el contenedor
-viejo y **redesplegando ese binario** — cambiar un despliegue que funciona por un registro
-que el explorer no mostraría igualmente. Descartado.
+Compiladores distintos ⇒ bytecode distinto ⇒ el hash no cuadra. Para que cuadrara habría
+que **redesplegar el binario del contenedor**, y en devnet el Muro 1 lo deja `unverified`
+igualmente. Descartado. ⚠️ **La afirmación de que `verify-from-repo` "se niega a escribir
+la PDA" se retiró**: la guía oficial no lo dice textualmente y no se ha probado, porque
+probarlo exige escribir on-chain.
+
+⚠️ **`solana-verify build` deja ficheros de `root` en `target/`**: ~1 055 en
+`target/release/` y en `target/sbpfv3-solana-solana/`, y además sobrescribe
+`target/deploy/solana_token_swap.so`. Antes del siguiente `anchor build`:
+`sudo chown -R $USER: target/` (nunca borrar `target/deploy/`). El `.so` local se restauró
+desde una copia y vuelve a dar `dbed1b34…`.
 
 📌 **La ironía, que es el hallazgo real y va al video:** fijar `solana_version = "4.2.2"`
 fue lo único que resolvió la guerra de toolchain de la Fase 0 y el asunto de SBPFv3.
-Nueve fases después, esa misma versión es la que impide el build reproducible, porque las
-imágenes del ecosistema aún no han llegado a ella. **La solución de la Fase 0 es el
-bloqueo de la Fase 9.** No es un fallo: es el precio de fijar una versión que las
-herramientas de alrededor todavía no alcanzan, y se paga tarde y en otro sitio.
+Nueve fases después, esa misma versión es la que impide el build reproducible: primero
+porque no había imagen, y desde el 21/09 porque la que hay no trae el mismo compilador.
+**La solución de la Fase 0 sigue siendo el bloqueo de la Fase 9.** Y la lección del
+cambio: **"no existe" caduca**. Toda afirmación sobre el ecosistema va con la fecha y la
+versión con que se midió.
 
 ### Lo que sí quedó, y cómo se comprueba
 
