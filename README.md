@@ -531,7 +531,7 @@ And one sent from the browser by a wallet, which is the one that proves the fron
 
 ## Verifying the deployed binary
 
-The binary running on devnet is byte-for-byte the one this repository builds, and you can confirm that in two commands. What is **not** possible is the formal, badge-bearing *verified build* — blocked by two limits of the tooling ecosystem, neither of them a property of this code. Both are written out below, because "we didn't do it" and "it cannot be done here" are different claims and only one of them is true.
+The binary running on devnet is byte-for-byte the one this repository builds, and you can confirm that in two commands — or reproduce it inside the official pinned container, which is the reproducible-build half (see [Wall 2](#wall-2--resolved-the-official-422-image-reproduces-the-binary-with---tools-version-v157)). What is **not** possible is the explorer's badge: remote verification does not cover devnet. That limit is not a property of this code, and it is written out below, because "we didn't do it" and "it cannot be done here" are different claims and only one of them is true.
 
 ### Check the hash yourself
 
@@ -552,7 +552,7 @@ solana-verify get-executable-hash target/deploy/solana_token_swap.so
 
 Both numbers are sha256 over the binary with its trailing zero padding stripped, which is the comparison `solana-verify` itself makes. Measured on 2026-09-30, after the upgrade that fixed a panic on mints with 39+ decimals, the two matched. The raw bytes match too: the local `.so` is **231 200 bytes**, sha256 `23480caa5d2d4751190f6a6c24762fd65937027a03f5b53bdbed89cf4d885784`, and it is exactly the first 231 200 bytes of what `solana program dump` returns. The dump is 233 184 bytes because the program account keeps the space of the first, larger deployment, and the extra 1 984 bytes are all zeros — which is why a plain `sha256sum` of the two files differs and the padding-stripped hash is the one to compare.
 
-⚠️ **What that proves and what it doesn't.** It shows the deployed program is what *this* toolchain produces from *this* source — the useful half. It is not a reproducible build: it still relies on you having the same toolchain, rather than on a container that pins it for everyone. Closing that gap is what the two walls below prevent.
+⚠️ **What that proves and what it doesn't.** It shows the deployed program is what *this* toolchain produces from *this* source — the useful half. On its own it is not a reproducible build: it relies on you having the same toolchain, rather than on a container that pins it for everyone. The container build under Wall 2 closes that gap.
 
 ### Wall 1 — remote verification only covers mainnet
 
@@ -560,13 +560,30 @@ The verification badge an explorer shows comes from a remote build run by the [O
 
 > You may have different versions deployed on different Solana clusters (i.e. devnet, testnet, mainnet). Ensure you use the correct network URL for the desired Solana cluster you want to verify a program against. **Remote verification will only work on mainnet.**
 
-This program lives on devnet, so `verification.status` stays `"unverified"` no matter what else is done. That limit alone closes the question; the second one is what stops even the local half.
+This program lives on devnet, so `verification.status` stays `"unverified"` no matter what else is done. That limit alone closes the question of the badge, and only redeploying on mainnet would lift it.
 
-### Wall 2 — the official 4.2.2 image builds with an older compiler
+### Wall 2 — resolved: the official 4.2.2 image reproduces the binary with `--tools-version v1.57`
 
 A reproducible build compiles inside a pinned container, `solanafoundation/solana-verifiable-build:<solana version>`.
 
-**How this section changed.** It was first written on **2026-09-20** with `solana-verify` 0.5.1, when no image for Solana 4.2.2 existed. The official `4.2.2` image was published **one day later, on 2026-09-21**, together with `solana-verify` **0.5.2**. Re-measured on **2026-10-16** with that release:
+**Measured on 2026-11-02 — it matches.** The official `4.2.2` image ships platform-tools **v1.56** by default, one release behind the **v1.57** that Anchor resolves for this workspace. The official [sBPFv3 programs guide](https://solana.com/upgrades/sbpfv3-programs) gives the flag that overrides it, and with it the container build reproduces the deployed binary:
+
+```bash
+# root Cargo.toml, unchanged:
+#   [workspace.metadata.cli]
+#   solana = "4.2.2"
+solana-verify build --cargo-build-sbf-args="--tools-version v1.57 --arch v3"
+# Found docker image for Solana version 4.2.2
+# info: uninstalling toolchain 1.89.0-sbpf-solana-v1.56
+solana-verify get-executable-hash target/deploy/solana_token_swap.so
+# dbed1b344fb94133aa2100822e246f17bff70b9b44660d29f723684ee1e222c5
+```
+
+Same image as before (digest `sha256:16053d84…`), `solana-verify` 0.5.2. The hash is the deployed `dbed1b34…`, and the raw file matches too: 231 200 bytes, sha256 `23480caa…`, identical to the `anchor build` artifact. The log only prints that v1.56 was removed, so which compiler ran was checked in what it produced: the freshly built `.rlib` files carry `rustc version 1.95.0-dev (ae660768a 2026-08-17)` — v1.57's rustc, not v1.56's 1.89.
+
+⚠️ **The build leaves `root`-owned files in `target/`** and overwrites `target/deploy/solana_token_swap.so`. Run `sudo chown -R $USER: target/` before the next `anchor build`.
+
+**How this section changed.** It was first written on **2026-09-20** with `solana-verify` 0.5.1, when no image for Solana 4.2.2 existed. The official `4.2.2` image was published **one day later, on 2026-09-21**, together with `solana-verify` **0.5.2**. Re-measured on **2026-10-16** with that release, without the flag:
 
 ```bash
 # root Cargo.toml declares the version, so solana-verify picks the matching image:
@@ -579,7 +596,7 @@ solana-verify get-executable-hash target/deploy/solana_token_swap.so
 # ca3eb13c660dc99c53850d890c9f5c2ea49a947343a3baecc88ae36e28ee031b
 ```
 
-**It does not match** the deployed `dbed1b34…`. Both binaries are SBPFv3 (`e_flags` 0x3), but the container's is 235 544 bytes against 231 200. The reason is inside the image: the tag says 4.2.2, but the build tool it ships is from 4.2.0:
+On 2026-10-16 that hash did not match the deployed `dbed1b34…`. Both binaries are SBPFv3 (`e_flags` 0x3), but the container's was 235 544 bytes against 231 200. The reason is inside the image: the tag says 4.2.2, but the build tool it ships is from 4.2.0:
 
 | | Container (`4.2.2` tag) | This project's deployed binary |
 |---|---|---|
@@ -589,15 +606,15 @@ solana-verify get-executable-hash target/deploy/solana_token_swap.so
 
 The container column is the output of `cargo-build-sbf --version` and of the platform-tools `rustc --version`, run with `docker run` inside that exact digest. This project's column is what `avm platform-tools resolve` reports for this workspace.
 
-Different compilers produce different bytecode, so the container's hash cannot match `dbed1b34…`. Closing the gap would mean deploying the container's binary in place of the current one, and on devnet Wall 1 still leaves the program `unverified`.
+Different compilers produce different bytecode, which explained the mismatch. The conclusion drawn then — that closing the gap meant deploying the container's binary — was wrong: the gap was the default platform-tools, and `--tools-version v1.57` swaps them inside the same image, as measured on 2026-11-02 above. Wall 1 still leaves the program `unverified` on devnet.
 
-### 🇪🇸 NOTA — la solución de la Fase 0 es el bloqueo de la Fase 9
+### 🇪🇸 NOTA — la solución de la Fase 0 fue, durante seis semanas, el bloqueo de la Fase 9
 
 Fijar `solana_version = "4.2.2"` fue **lo único que resolvió la guerra de toolchain** con la que arrancó este proyecto: sin esa línea, Anchor elige un default cuyo rustc es anterior a edition 2024 y no compila las dependencias; con la 3.1.14 que recomendaba la documentación, compila pero el validador no carga el binario SBPFv3.
 
-Nueve fases después, **esa misma versión es la que impide el build reproducible**. El 20/09 no había imagen para ella. La imagen oficial `4.2.2` salió al día siguiente, el 21/09, pero trae el `cargo-build-sbf` de la 4.2.0 y unas platform-tools más viejas (v1.56, rustc 1.89) que las que Anchor resuelve para esta versión (v1.57, rustc 1.95). Con otro compilador, el hash no cuadra. La solución de la Fase 0 sigue siendo el bloqueo de la Fase 9; solo ha cambiado el motivo.
+Nueve fases después, **esa misma versión fue la que impidió el build reproducible**. El 20/09 no había imagen para ella. La imagen oficial `4.2.2` salió al día siguiente, el 21/09, pero trae el `cargo-build-sbf` de la 4.2.0 y unas platform-tools más viejas (v1.56, rustc 1.89) que las que Anchor resuelve para esta versión (v1.57, rustc 1.95). Con ese compilador por defecto, el 16/10 el hash no cuadraba. El 02/11, con el `--tools-version v1.57` que da la guía oficial de sBPFv3, cuadra: la misma imagen, con el compilador cambiado dentro.
 
-No es un fallo de nadie: es lo que pasa al fijar una versión que las herramientas de alrededor aún no alcanzan del todo. Ir por delante tiene un precio, y se paga tarde y en otro sitio: aquí, en la única parte del proyecto que depende de que un tercero haya publicado una imagen con el mismo compilador. Y la lección del cambio de fecha: **"no existe" es una afirmación con fecha de caducidad**, así que va siempre con la fecha en que se midió.
+No fue un fallo de nadie: es lo que pasa al fijar una versión que las herramientas de alrededor aún no alcanzan del todo. Ir por delante tiene un precio, y se paga tarde y en otro sitio. Y la lección de los cambios de fecha, dos veces: **"no existe" y "no se puede" son afirmaciones con fecha de caducidad**, así que van siempre con la fecha en que se midieron. La del 16/10 caducó porque no se había leído la guía que daba el flag.
 
 ---
 
@@ -875,7 +892,7 @@ When its SOL falls below 0.05 the endpoint refuses with 503 rather than start fa
 
 ### The program is `unverified` on chain, and will stay that way
 
-`verification.status: "unverified"`, read from the explorer. A **verified build** was investigated in phase 9 and **ruled out as impossible for this deployment**: remote verification only covers mainnet, and the official Docker image for the Solana version this project pins (published 2026-09-21, a day after the investigation) builds with older platform-tools than Anchor uses, so its hash does not match the deployed binary (re-measured 2026-10-16). Both walls are measured and written out under [Verifying the deployed binary](#verifying-the-deployed-binary), along with the hash anyone can check by hand — which recovers the useful half of what a verified build would have given.
+`verification.status: "unverified"`, read from the explorer. The badge is **impossible for this deployment**: remote verification only covers mainnet. The reproducible build itself does work: since 2026-11-02, the official `4.2.2` Docker image with `--tools-version v1.57` (the flag from the official sBPFv3 guide; the image defaults to older platform-tools) reproduces the deployed hash `dbed1b34…`. Both are measured and written out under [Verifying the deployed binary](#verifying-the-deployed-binary), along with the hash anyone can check by hand.
 
 ### B→A can refuse a swap whose result would fit, on mints with 20+ decimals
 
@@ -898,7 +915,7 @@ No oracle, no reserves curve, no fees, no LP tokens. The price is whatever the m
 - [x] Phase 6: devnet deploy, demo mints and seed scripts
 - [x] Phase 7: Next.js frontend with wallet adapter
 - [x] Phase 8: Metaplex metadata and a public faucet
-- [x] Phase 9: full docs, account diagrams, hosted demo — and a verified build [investigated and ruled out](#verifying-the-deployed-binary)
+- [x] Phase 9: full docs, account diagrams, hosted demo — and a verified build: [reproducible in the official container, badge ruled out on devnet](#verifying-the-deployed-binary)
 - [x] Phase 10: walkthrough video and submission
 
 A second market on EURC/USDC was planned for phase 8 and **dropped**: both of Circle's devnet tokens have 6 decimals, so `10^dec_a` and `10^dec_b` cancel and the market would not exercise the scale conversion that DEMO6/DEMO9 demonstrates — and it would put Circle's own faucet in the middle of the demo.

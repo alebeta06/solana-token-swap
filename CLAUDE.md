@@ -6,9 +6,10 @@ Solana y Rust** — explicar antes de implementar, comparando siempre con Solidi
 
 > ⚠️ **Estado actual: las 11 fases (0–10) completadas — proyecto ENTREGADO.** Vídeo
 > publicado en YouTube (`nUb5637SPXo`) y entrega hecha en GitLab (merge `bcad811`).
-> El verified build quedó INVESTIGADO Y DESCARTADO, con el motivo medido (ver "El
-> verified build de la Fase 9"). **No queda trabajo de fases pendiente**: lo que venga
-> después es mantenimiento y se decide caso a caso.
+> El build reproducible funciona en el contenedor oficial desde el 2026-11-02; el badge
+> del explorer sigue siendo imposible en devnet (ver "El verified build de la Fase 9").
+> **No queda trabajo de fases pendiente**: lo que venga después es mantenimiento y se
+> decide caso a caso.
 > Son 11 fases (0 a 10). Ver "Plan completo — las 11 fases" y "Estado del programa".
 
 ---
@@ -728,16 +729,17 @@ cualquier visitante consiga tokens sin pedírselos al desplegador.
 | 6    | Deploy devnet + mints propias + script de seed   | ✅     |
 | 7    | Frontend Next.js                                 | ✅     |
 | 8    | Faucet + metadata de Metaplex (DEMO6/DEMO9)      | ✅     |
-| 9    | Vercel + README + diagramas + **verified build** | ✅ (el verified build, descartado con motivo) |
+| 9    | Vercel + README + diagramas + **verified build** | ✅ (build reproducible ✅; badge imposible en devnet) |
 | 10   | Video + entrega GitHub/GitLab                    | ✅     |
 
 ### El verified build de la Fase 9
 
-⛔ **INVESTIGADO Y DESCARTADO el 2026-09-20; RE-MEDIDO el 2026-10-16 con el mismo
-resultado.** Un verified build permite a cualquiera reproducir el binario desde el
-código y comprobar que coincide con el desplegado. Aquí es **imposible**, por dos muros
-medidos — ninguno de ellos del proyecto. El desarrollo completo está en el README de la
-raíz, sección "Verifying the deployed binary".
+✅ **El build reproducible FUNCIONA desde el 2026-11-02; el badge sigue siendo
+imposible.** Un verified build permite a cualquiera reproducir el binario desde el
+código y comprobar que coincide con el desplegado. Se investigó el 2026-09-20 y se
+re-midió el 2026-10-16 con dos muros medidos — ninguno del proyecto. **El Muro 2 quedó
+resuelto el 2026-11-02**; el Muro 1 sigue en pie. El desarrollo completo está en el
+README de la raíz, sección "Verifying the deployed binary".
 
 **Muro 1 — la verificación remota solo cubre mainnet.** El badge del explorer lo emite la
 API de OtterSec, y la documentación oficial de Solana lo dice literal: *"Remote
@@ -745,8 +747,18 @@ verification will only work on mainnet."* Este programa está en devnet, así qu
 `verification.status` se queda en `unverified` haga lo que haga el resto. **Este muro solo
 lo tira redesplegar en mainnet**, que no es lo que pide el módulo.
 
-**Muro 2 — la imagen oficial 4.2.2 compila con un compilador más viejo.** Historia con
-fechas, porque el muro cambió de motivo:
+**Muro 2 — RESUELTO: la imagen oficial 4.2.2 trae un compilador más viejo por defecto,
+y un flag lo cambia.** La imagen trae platform-tools **v1.56**; la [guía oficial de
+sBPFv3](https://solana.com/upgrades/sbpfv3-programs) da el flag para usar otras. Con el
+`Cargo.toml` tal cual (`[workspace.metadata.cli] solana = "4.2.2"`):
+
+```bash
+solana-verify build --cargo-build-sbf-args="--tools-version v1.57 --arch v3"
+solana-verify get-executable-hash target/deploy/solana_token_swap.so
+# dbed1b344fb94133aa2100822e246f17bff70b9b44660d29f723684ee1e222c5  ← el desplegado
+```
+
+Historia con fechas, porque el muro cambió de motivo dos veces y luego cayó:
 
 - **2026-09-20**, con `solana-verify` 0.5.1: no existía imagen para la 4.2.2 (la serie 4
   llegaba hasta la 4.1.2). Es lo que decía la primera versión de esta sección.
@@ -756,10 +768,18 @@ fechas, porque el muro cambió de motivo:
   `cargo install --locked --force`. Hizo falta `--force` porque la 0.5.1 era el binario de
   release y no una instalación de cargo. Se añadió `[workspace.metadata.cli] solana =
   "4.2.2"` al `Cargo.toml` raíz y se lanzó `solana-verify build --arch v3`. Hash:
-  **`ca3eb13c…`**, 235 544 bytes, SBPFv3. **No coincide** con el desplegado
+  **`ca3eb13c…`**, 235 544 bytes, SBPFv3. **No coincidía** con el desplegado
   `dbed1b34…`.
+- **2026-11-02**: misma imagen (digest `16053d84…`), `solana-verify` 0.5.2 y el flag de
+  la guía, `--cargo-build-sbf-args="--tools-version v1.57 --arch v3"`. Hash
+  **`dbed1b34…`**, 231 200 bytes, sha256 crudo `23480caa…`: **byte a byte el
+  desplegado.** El log solo imprime que desinstala `1.89.0-sbpf-solana-v1.56`; qué
+  compilador corrió se comprobó en lo producido: las `.rlib` nuevas llevan `rustc version
+  1.95.0-dev (ae660768a 2026-08-17)`, el de v1.57. No hizo falta probar `solana = "4.2.0"`
+  ni `"4.3.0"` (las otras dos vías de la guía).
 
-El motivo está dentro de la imagen, leído con `docker run` sobre ese digest:
+El motivo del fallo del 16/10 estaba dentro de la imagen, leído con `docker run` sobre ese
+digest — es el compilador **por defecto**, el que el flag sustituye:
 
 | | Contenedor (tag `4.2.2`) | Binario desplegado |
 | --- | --- | --- |
@@ -771,25 +791,27 @@ Nuestra columna sale de `avm platform-tools resolve` sobre este workspace. ⚠�
 `cargo-build-sbf` del PATH del sistema **no** es el que usa Anchor: el bueno lo resuelve
 Anchor desde `solana_version`.
 
-Compiladores distintos ⇒ bytecode distinto ⇒ el hash no cuadra. Para que cuadrara habría
-que **redesplegar el binario del contenedor**, y en devnet el Muro 1 lo deja `unverified`
-igualmente. Descartado. ⚠️ **La afirmación de que `verify-from-repo` "se niega a escribir
-la PDA" se retiró**: la guía oficial no lo dice textualmente y no se ha probado, porque
+Compiladores distintos ⇒ bytecode distinto: eso explicaba el fallo del 16/10. La
+conclusión que se sacó entonces —que para cuadrar habría que **redesplegar el binario del
+contenedor**— era errónea: bastaba cambiar el compilador dentro de la misma imagen, y
+nadie había leído la guía que lo explica. ⚠️ **La afirmación de que `verify-from-repo`
+"se niega a escribir la PDA" se retiró**: la guía oficial no lo dice textualmente y no se ha probado, porque
 probarlo exige escribir on-chain.
 
 ⚠️ **`solana-verify build` deja ficheros de `root` en `target/`**: ~1 055 en
-`target/release/` y en `target/sbpfv3-solana-solana/`, y además sobrescribe
-`target/deploy/solana_token_swap.so`. Antes del siguiente `anchor build`:
+`target/release/` y en `target/sbpfv3-solana-solana/` el 16/10, 784 el 02/11, y además
+sobrescribe `target/deploy/solana_token_swap.so`. Antes del siguiente `anchor build`:
 `sudo chown -R $USER: target/` (nunca borrar `target/deploy/`). El `.so` local se restauró
 desde una copia y vuelve a dar `dbed1b34…`.
 
 📌 **La ironía, que es el hallazgo real y va al video:** fijar `solana_version = "4.2.2"`
 fue lo único que resolvió la guerra de toolchain de la Fase 0 y el asunto de SBPFv3.
-Nueve fases después, esa misma versión es la que impide el build reproducible: primero
-porque no había imagen, y desde el 21/09 porque la que hay no trae el mismo compilador.
-**La solución de la Fase 0 sigue siendo el bloqueo de la Fase 9.** Y la lección del
-cambio: **"no existe" caduca**. Toda afirmación sobre el ecosistema va con la fecha y la
-versión con que se midió.
+Nueve fases después, esa misma versión fue la que impidió el build reproducible: primero
+porque no había imagen, y desde el 21/09 porque la que hay no trae por defecto el mismo
+compilador. El 02/11, con `--tools-version v1.57`, cuadra. Y la lección, dos veces:
+**"no existe" y "no se puede" caducan**. Toda afirmación sobre el ecosistema va con la
+fecha y la versión con que se midió — y antes de dar algo por imposible, se lee la guía
+oficial del caso concreto (aquí, la de sBPFv3).
 
 ### Lo que sí quedó, y cómo se comprueba
 
@@ -814,9 +836,10 @@ por eso no coinciden con un `sha256sum` a secas.
 comentario: los `require!` de Anchor incrustan `line!()` en el binario. Medido en la
 misma sesión (quitar dos líneas cambió el hash; sustituirlas por dos en blanco, no).
 
-⚠️ **Eso NO es un build reproducible** y no hay que venderlo como tal: demuestra que lo
-desplegado es lo que sale de *este* toolchain, no que cualquiera con Docker llegue al
-mismo binario. Es la mitad útil, y es honesta mientras se diga cuál de las dos mitades es.
+⚠️ **Esto solo NO es un build reproducible**: demuestra que lo desplegado es lo que sale
+de *este* toolchain. Que cualquiera con Docker llegue al mismo binario lo demuestra el
+build en contenedor del Muro 2 (medido el 2026-11-02). Lo que sigue sin existir es el
+badge, por el Muro 1.
 
 ---
 
